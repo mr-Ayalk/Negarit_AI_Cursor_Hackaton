@@ -1,0 +1,36 @@
+"use client";
+
+import Link from "next/link";
+import Image from "next/image";
+import { usePathname } from "next/navigation";
+
+const links = [
+  { href: "/", label: "Home" },
+  { href: "/setup", label: "Enter" },
+  { href: "/guide", label: "Guide" },
+  { href: "/summary", label: "Story" },
+];
+
+export function SiteHeader() {
+  const pathname = usePathname();
+  return (
+    <header className="topbar">
+      <div className="topbar-inner">
+        <Link href="/" className="brand">
+          <Image src="/negarit-drum.png" alt="" width={36} height={36} />
+          Negarit AI
+        </Link>
+        <nav className="nav-links">
+          {links.map((l) => (
+            <Link key={l.href} href={l.href} className={pathname === l.href ? "active" : undefined}>
+              {l.label}
+            </Link>
+          ))}
+        </nav>
+        <Link href="/setup" className="btn btn-primary" style={{ padding: "0.5rem 0.9rem", fontSize: "0.85rem" }}>
+          Start visit
+        </Link>
+      </div>
+    </header>
+  );
+}
