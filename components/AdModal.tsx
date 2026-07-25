@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { MuseumLocation } from "@/lib/api";
 import { api } from "@/lib/api";
+import { useGuide } from "@/lib/guide-context";
 
 type Props = {
   open: boolean;
@@ -14,23 +15,28 @@ function validEthPhone(phone: string) {
   return /^(09|07)\d{8}$/.test(phone.replace(/\s+/g, ""));
 }
 
+function validEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export function AdModal({ open, location, onClose }: Props) {
+  const { session } = useGuide();
   const ads = location?.ads || [];
   const [selected, setSelected] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
-  const [phase, setPhase] = useState<"browse" | "pay" | "done">("browse");
+  const [email, setEmail] = useState("");
+  const [phase, setPhase] = useState<"browse" | "pay" | "redirect">("browse");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ok, setOk] = useState(false);
 
   useEffect(() => {
     if (open) {
       setSelected(null);
       setPhone("");
+      setEmail("");
       setPhase("browse");
       setStatus("");
       setBusy(false);
-      setOk(false);
     }
   }, [open, location?.id]);
 
@@ -42,36 +48,38 @@ export function AdModal({ open, location, onClose }: Props) {
     setSelected(productId);
     setPhase("pay");
     setStatus("");
-    setOk(false);
   };
 
   const pay = async () => {
-    if (!validEthPhone(phone)) {
-      setStatus("Enter a valid Telebirr number (09XXXXXXXX or 07XXXXXXXX).");
-      setOk(false);
+    if (!validEmail(email)) {
+      setStatus("Enter a valid email for the Chapa receipt.");
+      return;
+    }
+    if (phone && !validEthPhone(phone)) {
+      setStatus("Phone must be 09XXXXXXXX or 07XXXXXXXX.");
       return;
     }
     setBusy(true);
-    setStatus("Opening Telebirr…");
-    setOk(false);
+    setStatus("Creating Chapa checkout…");
     try {
+      const name = (session.visitorName || "Visitor").trim();
+      const parts = name.split(/\s+/);
       const { payment } = await api.createPayment({
         amountETB: ad.priceETB,
         purpose: "product",
         productId: ad.productId,
-        phone,
+        phone: phone || undefined,
+        email: email.trim(),
+        firstName: parts[0] || "Museum",
+        lastName: parts.slice(1).join(" ") || "Visitor",
         description: ad.title,
       });
-      setStatus("Confirming payment with Telebirr…");
-      await new Promise((r) => setTimeout(r, 700));
-      await api.confirmPayment(payment.id);
-      setPhase("done");
-      setStatus(`Paid ${ad.priceETB} ETB for ${ad.title}. Thank you!`);
-      setOk(true);
+      if (!payment.checkoutUrl) throw new Error("No checkout URL from Chapa");
+      setPhase("redirect");
+      setStatus("Redirecting to Chapa…");
+      window.location.href = payment.checkoutUrl;
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Payment failed");
-      setOk(false);
-    } finally {
       setBusy(false);
     }
   };
@@ -79,8 +87,11 @@ export function AdModal({ open, location, onClose }: Props) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet stack" onClick={(e) => e.stopPropagation()}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3 style={{ fontSize: "1.15rem" }}>Museum shop</h3>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+          <div>
+            <p className="eyebrow">Museum shop</p>
+            <h3 style={{ fontSize: "1.25rem" }}>Hall collection</h3>
+          </div>
           <button className="btn btn-ghost" style={{ padding: "0.35rem 0.65rem" }} onClick={onClose}>
             Close
           </button>
@@ -88,11 +99,11 @@ export function AdModal({ open, location, onClose }: Props) {
 
         {phase === "browse" && (
           <div className="stack">
+            <p className="muted small">Pieces tied to this hall — pay securely with Chapa.</p>
             {ads.map((item) => (
               <button
                 key={item.id}
-                className="btn btn-ghost"
-                style={{ justifyContent: "space-between", textAlign: "left" }}
+                className="shop-item"
                 onClick={() => startPay(item.productId)}
               >
                 <span>
@@ -100,45 +111,49 @@ export function AdModal({ open, location, onClose }: Props) {
                   <br />
                   <span className="muted small">{item.subtitle}</span>
                 </span>
-                <span>{item.priceETB} ETB</span>
+                <span className="shop-price">{item.priceETB} ETB</span>
               </button>
             ))}
           </div>
         )}
 
-        {phase === "pay" && (
+        {(phase === "pay" || phase === "redirect") && (
           <div className="stack">
             <p>
-              <strong>{ad.title}</strong> — {ad.priceETB} ETB
+              <strong>{ad.title}</strong>
+              <span className="muted"> · {ad.priceETB} ETB</span>
             </p>
             <input
               className="field"
-              placeholder="Telebirr phone 09XXXXXXXX"
+              type="email"
+              placeholder="Email for receipt"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+            <input
+              className="field"
+              placeholder="Phone 09XXXXXXXX (optional)"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              inputMode="tel"
             />
             <button className="btn btn-primary btn-block" disabled={busy} onClick={pay}>
-              {busy ? "Processing…" : "Pay with Telebirr"}
+              {busy ? "Opening Chapa…" : "Pay with Chapa"}
             </button>
-            <button className="btn btn-ghost btn-block" onClick={() => setPhase("browse")}>
+            <button
+              className="btn btn-ghost btn-block"
+              disabled={busy}
+              onClick={() => setPhase("browse")}
+            >
               Back
             </button>
+            <p className="muted small">You will complete payment on Chapa’s secure page.</p>
           </div>
         )}
 
-        {phase === "done" && (
-          <div className="stack">
-            <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>
-              {status}
-            </p>
-            <button className="btn btn-primary btn-block" onClick={onClose}>
-              Done
-            </button>
-          </div>
-        )}
-
-        {phase !== "done" && status && (
-          <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>
+        {status && (
+          <p className="small" style={{ color: status.includes("fail") || status.includes("valid") ? "var(--accent)" : "var(--muted)" }}>
             {status}
           </p>
         )}

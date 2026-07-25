@@ -49,11 +49,12 @@ export type VisitSession = {
 
 export type Payment = {
   id: string;
+  txRef?: string;
   provider: string;
   status: string;
   amountETB: number;
   purpose: string;
-  checkoutUrl?: string;
+  checkoutUrl?: string | null;
 };
 
 /** Same-origin Next.js API — works locally and on Vercel */
@@ -158,18 +159,29 @@ export const api = {
     productId?: string;
     visitorId?: string;
     phone?: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
     description?: string;
   }) =>
-    request<{ payment: Payment }>("/payments/telebirr", {
+    request<{ payment: Payment }>("/payments/chapa", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
   confirmPayment: (id: string) =>
     request<{ payment: Payment }>(`/payments/${id}/confirm`, { method: "POST" }),
-  tip: (amountETB: number, phone?: string) =>
+  verifyChapa: (txRef: string) =>
+    request<{ payment: Payment }>("/payments/chapa/verify", {
+      method: "POST",
+      body: JSON.stringify({ tx_ref: txRef }),
+    }),
+  tip: (
+    amountETB: number,
+    opts?: { phone?: string; email?: string; firstName?: string; lastName?: string }
+  ) =>
     request<{ payment: Payment; message: string }>("/tips", {
       method: "POST",
-      body: JSON.stringify({ amountETB, phone }),
+      body: JSON.stringify({ amountETB, ...opts }),
     }),
   coffee: (near?: string) =>
     request<{ places: CoffeePlace[] }>(
