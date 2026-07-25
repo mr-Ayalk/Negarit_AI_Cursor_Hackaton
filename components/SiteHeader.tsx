@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useTheme } from "@/lib/theme";
 
 const links = [
   { href: "/", label: "Home" },
@@ -13,6 +14,8 @@ const links = [
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
+
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -27,9 +30,20 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <Link href="/setup" className="btn btn-primary" style={{ padding: "0.5rem 0.9rem", fontSize: "0.85rem" }}>
-          Start visit
-        </Link>
+        <div className="topbar-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+            title={theme === "light" ? "Dark" : "Light"}
+          >
+            {theme === "light" ? "☾" : "☀"}
+          </button>
+          <Link href="/setup" className="btn btn-primary" style={{ padding: "0.5rem 0.9rem", fontSize: "0.85rem" }}>
+            Start visit
+          </Link>
+        </div>
       </div>
     </header>
   );

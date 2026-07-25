@@ -5,7 +5,7 @@ import { Providers } from "@/components/Providers";
 export const metadata: Metadata = {
   title: "Negarit AI — Adwa Museum Guide",
   description:
-    "Bluetooth-powered AI visiting guide for Adwa Museum. Voice stories, Telebirr payments, and a day blog of your visit.",
+    "WiFi-powered AI visiting guide for Adwa Museum. Voice stories, Addis AI translation, Telebirr payments, and a day blog of your visit.",
   applicationName: "Negarit AI",
   icons: {
     icon: "/negarit-drum.png",
@@ -16,13 +16,20 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#1c1410",
+  themeColor: "#ffffff",
   viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="light" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('negarit-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body>
         <Providers>
           <div className="app-shell">{children}</div>

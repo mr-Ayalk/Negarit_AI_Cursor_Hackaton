@@ -1,48 +1,178 @@
 /**
- * Real browser voice pipeline for Negarit AI.
- * STT: Web Speech Recognition (voice → text)
- * TTS: Speech Synthesis (text → voice)
- * Level: AnalyserNode for refreshment heuristics
- * AI API placeholders remain on the server for future ElevenLabs / Addis AI swap.
+ * Client voice pipeline:
+ * STT → ElevenLabs Scribe (recorded audio) with Web Speech fallback (EN only)
+ * TTS → ElevenLabs (via /api/ai/tts) with browser SpeechSynthesis fallback
  */
 
-export function speak(text: string, language: "en" | "am" = "en"): Promise<void> {
-  if (typeof window === "undefined" || !window.speechSynthesis) {
-    return Promise.resolve();
-  }
+let currentAudio: HTMLAudioElement | null = null;
 
-  return new Promise((resolve) => {
+export function stopSpeaking() {
+  if (typeof window === "undefined") return;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.src = "";
+    currentAudio = null;
+  }
+}
+
+async function speakBrowser(text: string, language: "en" | "am"): Promise<void> {
+  if (!window.speechSynthesis) {
+    throw new Error("No speech engine available");
+  }
+  return new Promise((resolve, reject) => {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = language === "am" ? "am-ET" : "en-US";
     u.rate = 0.94;
     u.pitch = 1.02;
-    u.volume = 1;
-
     const voices = window.speechSynthesis.getVoices();
     const preferred =
-      voices.find((v) => v.lang.startsWith(language === "am" ? "am" : "en") && /female|natural|google/i.test(v.name)) ||
-      voices.find((v) => v.lang.startsWith(language === "am" ? "am" : "en"));
+      voices.find(
+        (v) =>
+          v.lang.startsWith(language === "am" ? "am" : "en") &&
+          /female|natural|google/i.test(v.name)
+      ) || voices.find((v) => v.lang.startsWith(language === "am" ? "am" : "en"));
     if (preferred) u.voice = preferred;
 
     let done = false;
-    const finish = () => {
+    const finish = (ok = true) => {
       if (done) return;
       done = true;
-      resolve();
+      if (ok) resolve();
+      else reject(new Error("Browser TTS failed"));
     };
-
-    u.onend = finish;
-    u.onerror = finish;
+    u.onend = () => finish(true);
+    u.onerror = () => finish(false);
     window.speechSynthesis.speak(u);
-    setTimeout(finish, Math.min(20000, Math.max(2500, text.length * 60)));
+    setTimeout(() => finish(true), Math.min(20000, Math.max(2500, text.length * 60)));
   });
 }
 
-export function stopSpeaking() {
-  if (typeof window !== "undefined" && window.speechSynthesis) {
-    window.speechSynthesis.cancel();
+async function speakElevenLabs(text: string, language: "en" | "am"): Promise<boolean> {
+  const res = await fetch("/api/ai/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, language, provider: "elevenlabs" }),
+  });
+  if (!res.ok) return false;
+  const data = await res.json();
+  if (!data.audioBase64) return false;
+
+  stopSpeaking();
+  const mime = data.mimeType || "audio/mpeg";
+  const url = `data:${mime};base64,${data.audioBase64}`;
+  const audio = new Audio(url);
+  currentAudio = audio;
+
+  await new Promise<void>((resolve, reject) => {
+    audio.onended = () => resolve();
+    audio.onerror = () => reject(new Error("Audio playback failed"));
+    void audio.play().catch(reject);
+  });
+  return true;
+}
+
+/** Speak with ElevenLabs voice (primary). */
+export async function speak(text: string, language: "en" | "am" = "en"): Promise<void> {
+  if (typeof window === "undefined" || !text.trim()) return;
+  try {
+    const ok = await speakElevenLabs(text, language);
+    if (ok) return;
+  } catch {
+    /* fall through */
   }
+  if (language === "am") {
+    throw new Error("ElevenLabs voice is required for Amharic. Check your connection and try again.");
+  }
+  await speakBrowser(text, language);
+}
+
+function pickMime(): string {
+  if (typeof MediaRecorder === "undefined") return "audio/webm";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) || "audio/webm";
+}
+
+/** Record a short utterance from the mic for ElevenLabs STT */
+export async function recordUtterance(ms = 6000): Promise<{
+  audioBase64: string;
+  mimeType: string;
+}> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Microphone is not available on this device.");
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+    },
+  });
+
+  const mimeType = pickMime();
+  const recorder = new MediaRecorder(stream, { mimeType });
+  const chunks: BlobPart[] = [];
+
+  return new Promise((resolve, reject) => {
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.onerror = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      reject(new Error("Recording failed"));
+    };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      try {
+        const blob = new Blob(chunks, { type: mimeType.split(";")[0] });
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        resolve({
+          audioBase64: btoa(binary),
+          mimeType: mimeType.split(";")[0],
+        });
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error("Could not encode audio"));
+      }
+    };
+
+    try {
+      recorder.start();
+      setTimeout(() => {
+        if (recorder.state !== "inactive") recorder.stop();
+      }, ms);
+    } catch {
+      stream.getTracks().forEach((t) => t.stop());
+      reject(new Error("Could not start microphone recording."));
+    }
+  });
+}
+
+export async function transcribeWithElevenLabs(
+  language: "en" | "am" = "en"
+): Promise<string> {
+  const { audioBase64, mimeType } = await recordUtterance(language === "am" ? 7000 : 5500);
+  const res = await fetch("/api/ai/stt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audioBase64, mimeType, language }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || "Voice transcription failed");
+  }
+  if (!data.text?.trim()) {
+    throw new Error(data.error || "I could not hear that. Tap Ask and try again.");
+  }
+  return String(data.text).trim();
 }
 
 type SpeechRec = {
@@ -67,13 +197,13 @@ function getRecognition(): SpeechRec | null {
 }
 
 export function isSpeechRecognitionSupported() {
-  return !!getRecognition();
+  return !!getRecognition() || Boolean(navigator.mediaDevices?.getUserMedia);
 }
 
-export function listenOnce(language: "en" | "am" = "en"): Promise<string> {
+function listenBrowser(language: "en" | "am" = "en"): Promise<string> {
   const rec = getRecognition();
   if (!rec) {
-    return Promise.reject(new Error("Speech recognition is not supported in this browser. Try Chrome."));
+    return Promise.reject(new Error("Speech recognition is not supported. Try Chrome."));
   }
 
   return new Promise((resolve, reject) => {
@@ -94,7 +224,15 @@ export function listenOnce(language: "en" | "am" = "en"): Promise<string> {
       settle(() => (text ? resolve(text) : reject(new Error("Could not hear that. Try again."))));
     };
     rec.onerror = (ev) => {
-      settle(() => reject(new Error(ev.error === "not-allowed" ? "Microphone permission denied." : `Listen error: ${ev.error}`)));
+      settle(() =>
+        reject(
+          new Error(
+            ev.error === "not-allowed"
+              ? "Microphone permission denied."
+              : `Listen error: ${ev.error}`
+          )
+        )
+      );
     };
     rec.onend = () => {
       settle(() => reject(new Error("No speech detected. Tap Ask and speak clearly.")));
@@ -114,6 +252,17 @@ export function listenOnce(language: "en" | "am" = "en"): Promise<string> {
       }
     }, 8000);
   });
+}
+
+/** Prefer ElevenLabs STT. For Amharic, do not silently fall back after a failed recording. */
+export async function listenOnce(language: "en" | "am" = "en"): Promise<string> {
+  stopSpeaking();
+  try {
+    return await transcribeWithElevenLabs(language);
+  } catch (e) {
+    if (language === "am") throw e;
+    return listenBrowser(language);
+  }
 }
 
 export async function measureVoiceLevel(ms = 1800): Promise<number> {
@@ -150,7 +299,6 @@ export async function measureVoiceLevel(ms = 1800): Promise<number> {
 
     await ctx.close();
     const avg = samples.reduce((a, b) => a + b, 0) / (samples.length || 1);
-    // Map RMS ~0.01–0.15 into 0–1 comfort scale
     return Math.min(1, Math.max(0, avg * 8));
   } catch {
     return 0.5;

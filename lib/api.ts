@@ -79,9 +79,14 @@ export const api = {
   locations: () => request<{ locations: MuseumLocation[] }>("/locations"),
   resolveBeacon: (beaconId: string, rssi?: number) =>
     request<{ matched: boolean; location: MuseumLocation; proximity: string }>(
-      "/beacon/resolve",
-      { method: "POST", body: JSON.stringify({ beaconId, rssi }) }
+      "/wifi/resolve",
+      { method: "POST", body: JSON.stringify({ wifiId: beaconId, beaconId, rssi }) }
     ),
+  translate: (text: string, from: "en" | "am", to: "en" | "am") =>
+    request<{ translation: string; provider: string }>("/ai/translate", {
+      method: "POST",
+      body: JSON.stringify({ text, from, to }),
+    }),
   welcome: (visitorName: string, language: string) =>
     request<{ text: string; tts: { durationMs: number }; location: MuseumLocation }>(
       "/ai/welcome",
@@ -97,15 +102,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  tts: (text: string) =>
-    request<{ durationMs: number; text: string }>("/ai/tts", {
+  tts: (text: string, language: "en" | "am" = "en") =>
+    request<{
+      durationMs: number;
+      text: string;
+      audioBase64?: string | null;
+      mimeType?: string | null;
+      provider?: string;
+    }>("/ai/tts", {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, language, provider: "elevenlabs" }),
     }),
-  stt: (language: string) =>
-    request<{ text: string }>("/ai/stt", {
+  aiStatus: () =>
+    request<{ addisAi: boolean; elevenLabs: boolean; wifiDetect: boolean }>("/ai/status"),
+  stt: (
+    language: string,
+    audio?: { audioBase64: string; mimeType?: string }
+  ) =>
+    request<{ text: string; provider?: string }>("/ai/stt", {
       method: "POST",
-      body: JSON.stringify({ language }),
+      body: JSON.stringify({ language, ...audio }),
     }),
   refreshmentCheck: (payload: {
     visitMinutes: number;

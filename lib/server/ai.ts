@@ -1,41 +1,95 @@
 import type { MuseumLocation } from "@/lib/api";
+import { resolveLanguage } from "@/lib/lang";
+import { generateMuseumGuide, translateText } from "./addis";
+import { elevenLabsSTT, elevenLabsTTS, hasElevenLabsKey } from "./elevenlabs";
+import { hallArrivalQuestion, retrieveKnowledge } from "./rag";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function speechToText({
   language = "en",
+  audioBase64,
+  mimeType,
 }: {
   audioBase64?: string;
+  mimeType?: string;
   language?: string;
 }) {
-  await sleep(250);
+  const lang = language === "am" ? "am" : "en";
+
+  if (audioBase64 && hasElevenLabsKey()) {
+    try {
+      const stt = await elevenLabsSTT({
+        audioBase64,
+        mimeType: mimeType || "audio/webm",
+        language: lang,
+      });
+      return {
+        provider: stt.provider,
+        text: stt.text,
+        confidence: 0.95,
+        language: lang,
+      };
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : "ElevenLabs STT failed");
+    }
+  }
+
+  await sleep(80);
   return {
-    provider: "browser-stt-fallback",
-    text:
-      language === "am"
-        ? "ስለ አድዋ ጦርነት ተጨማሪ ንገረኝ"
-        : "Tell me more about what happened here",
-    confidence: 0.9,
-    language,
-    note: "Client prefers Web Speech API; swap to ElevenLabs / Addis AI when keys are set",
+    provider: "browser-stt-needed",
+    text: "",
+    confidence: 0,
+    language: lang,
+    tip: "Send audioBase64 for ElevenLabs Scribe.",
   };
 }
 
 export async function textToSpeech({
   text,
   voice = "negarit-guide",
+  language = "en",
 }: {
   text: string;
   voice?: string;
+  language?: "en" | "am";
 }) {
-  await sleep(120);
+  if (!text?.trim()) throw new Error("text is required");
+
+  if (hasElevenLabsKey()) {
+    try {
+      const audio = await elevenLabsTTS({
+        text,
+        language: language === "am" ? "am" : "en",
+      });
+      return {
+        provider: audio.provider,
+        voice: audio.voiceId,
+        text,
+        audioBase64: audio.audioBase64,
+        mimeType: audio.mimeType,
+        durationMs: Math.min(20000, Math.max(1800, text.length * 55)),
+      };
+    } catch (e) {
+      return {
+        provider: "browser-tts-fallback",
+        voice,
+        text,
+        audioBase64: null,
+        mimeType: null,
+        durationMs: Math.min(16000, Math.max(1800, text.length * 52)),
+        error: e instanceof Error ? e.message : "ElevenLabs failed",
+      };
+    }
+  }
+
   return {
     provider: "browser-tts",
     voice,
     text,
-    audioUrl: null,
+    audioBase64: null,
+    mimeType: null,
     durationMs: Math.min(16000, Math.max(1800, text.length * 52)),
-    note: "Client speaks via Speech Synthesis; swap to ElevenLabs streaming when ready",
   };
 }
 
@@ -50,54 +104,95 @@ export async function generateGuideReply({
   question?: string;
   language?: string;
 }) {
-  await sleep(450);
-  const name = visitorName || "friend";
-  const loc = location?.name || "this hall";
-  const story = location?.stories?.[0];
-  const q = (question || "").toLowerCase();
+  // Amharic script in the question always forces Addis Amharic path
+  const lang = resolveLanguage(language === "am" ? "am" : "en", question);
+  const locName =
+    lang === "am"
+      ? location?.nameAm || location?.name || "this hall"
+      : location?.name || "this hall";
+  const narrative = lang === "am" ? location?.narrative?.am : location?.narrative?.en;
+  const q =
+    question?.trim() ||
+    (location ? hallArrivalQuestion(locName, lang) : "Tell me about Adwa Museum");
 
-  if (language === "am") {
+  const rag = retrieveKnowledge({
+    question: q,
+    locationId: location?.id,
+    limit: 4,
+  });
+
+  try {
+    // Always Addis AI for guide replies (Amharic native; English via translate)
+    const ai = await generateMuseumGuide({
+      visitorName,
+      locationName: locName,
+      question: q,
+      language: lang,
+      narrative,
+      ragContext: rag.context,
+    });
     return {
-      provider: "addis-ai-placeholder",
-      reply: `${name}፣ በ${location?.nameAm || loc} ውስጥ ነዎት። ${
-        story
-          ? `${story.title}፦ ${story.body}`
-          : "ይህ ቦታ የአድዋ ድል ትውስታ ነው።"
-      } ጥያቄዎን ስምቻለሁ — ተጨማሪ ታሪክ ይፈልጋሉ?`,
+      ...ai,
+      language: lang,
+      rag: { codes: rag.codes, sources: rag.chunks.map((c) => c.title) },
+    };
+  } catch {
+    await sleep(150);
+    const name = visitorName || "friend";
+    const script =
+      lang === "am"
+        ? location?.guideScript?.am || location?.narrative?.am
+        : location?.guideScript?.en || location?.narrative?.en;
+    const snippet = rag.chunks[0]?.text
+      ?.replace(/^###.*$/m, "")
+      .replace(/\*\*/g, "")
+      .split("\n")
+      .map((l) => l.replace(/^[-*]\s*/, "").trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(" ");
+
+    if (lang === "am") {
+      return {
+        provider: "rag-fallback",
+        language: lang,
+        reply: script || `${name}, ${locName}. ${snippet || ""}`.trim(),
+        rag: { codes: rag.codes, sources: rag.chunks.map((c) => c.title) },
+      };
+    }
+
+    return {
+      provider: "rag-fallback",
+      language: lang,
+      reply: `${name}, here in ${locName}: ${snippet || script || "Adwa's memory lives in this hall."}`,
+      rag: { codes: rag.codes, sources: rag.chunks.map((c) => c.title) },
     };
   }
+}
 
-  let focus = location?.narrative?.en || `You are in ${loc}.`;
-  if (q.includes("warrior") || q.includes("shield") || q.includes("battle")) {
-    focus =
-      story?.body ||
-      "The warriors of Adwa carried courage like armor. Shields of hide and spears of iron closed ranks on highland roads.";
-  } else if (q.includes("taytu") || q.includes("empress") || q.includes("women")) {
-    focus =
-      "Empress Taytu's resolve shaped strategy as surely as any spear. Women of Adwa fed columns, carried water, and kept the campaign alive.";
-  } else if (q.includes("map") || q.includes("treaty") || q.includes("wuchale")) {
-    focus =
-      "The Treaty of Wuchale became a spark. Ethiopia refused foreign guardianship — and Adwa sealed that refusal in victory.";
-  } else if (story) {
-    focus = `${story.title}. ${story.body}`;
-  }
-
-  return {
-    provider: "addis-ai-placeholder",
-    reply: `${name}, here in ${loc}: ${focus} ${
-      question ? `You asked about “${question.trim()}.” ` : ""
-    }Look around slowly — every object nearby is a chapter. Ask me another question anytime.`,
-  };
+export async function translateGuideText({
+  text,
+  from,
+  to,
+}: {
+  text: string;
+  from: "en" | "am";
+  to: "en" | "am";
+}) {
+  return translateText({
+    text,
+    sourceLanguage: from,
+    targetLanguage: to,
+  });
 }
 
 export async function researchEnrichment({ topic }: { topic?: string }) {
-  await sleep(200);
+  const rag = retrieveKnowledge({ question: topic, limit: 3 });
   return {
-    provider: "exa-firecrawl-placeholder",
+    provider: "negarit-rag",
     topic,
-    snippets: [
-      `Curated museum notes for “${topic}” would load from Adwa archives.`,
-    ],
+    snippets: rag.chunks.map((c) => c.title),
+    context: rag.context.slice(0, 1200),
   };
 }
 
@@ -110,44 +205,70 @@ export async function generateVisitBlog({
   visitedLocations: MuseumLocation[];
   language?: string;
 }) {
-  await sleep(600);
+  await sleep(150);
   const name = visitorName || "Traveler";
-  const stops = visitedLocations.map((l) => l.name);
-  const path = stops.join(" → ");
+  const lang = language === "am" ? "am" : "en";
+  const stops = visitedLocations.map((l) => (lang === "am" ? l.nameAm || l.name : l.name));
+  const pathLabel = stops.join(" -> ");
 
-  if (language === "am") {
-    return {
-      provider: "blog-placeholder",
-      title: `${name} በአድዋ — የአንድ ቀን ጉብኝት`,
-      subtitle: "የነጋሪት AI ትውስታ",
-      body: `ዛሬ ${name} በአድዋ ሙዚየም ተጓዘ። መንገዱ፦ ${path || "መግቢያ"}። ነጋሪት ከበር ወደ በር መርቶ ታሪኩን በድምጽ አስረዳ። ድሉ አሁንም ይኖራል — በእርስዎ ትውስታ ውስጥ።`,
-      highlights: visitedLocations.map((l) => ({
-        location: l.nameAm || l.name,
-        line: l.narrative.am.slice(0, 110) + "…",
-      })),
-    };
+  let title =
+    lang === "am" ? `${name} at Adwa — Visit Chronicle` : `${name} at Adwa — A Day Written in Victory`;
+  let body =
+    lang === "am"
+      ? `Today ${name} visited Adwa Museum. Path: ${pathLabel || "Gateway"}. Negarit guided the tour.`
+      : `${name} walked Adwa Museum on WiFi zones: ${pathLabel || "Gateway"}. Negarit guided each hall — and Adwa's victory still speaks.`;
+
+  const rag = retrieveKnowledge({
+    question: `visit story ${pathLabel} Adwa memorial museum`,
+    locationId: visitedLocations[visitedLocations.length - 1]?.id,
+    limit: 3,
+  });
+
+  try {
+    const narrative = visitedLocations
+      .map((l) => (lang === "am" ? l.narrative.am : l.narrative.en))
+      .join(" ");
+    const ai = await generateMuseumGuide({
+      visitorName: name,
+      locationName: "Adwa Museum visit chronicle",
+      question:
+        lang === "am"
+          ? `Write a short beautiful Amharic visit-day story for halls: ${pathLabel || "Gateway"}. End with why Adwa matters for Africa.`
+          : `Write a beautiful short visit-day story covering these halls: ${pathLabel || "Gateway"}. End with one line about why Adwa still matters for Africa.`,
+      language: lang,
+      narrative,
+      ragContext: rag.context,
+    });
+    if (ai.reply && ai.reply.length > 40) {
+      body = ai.reply;
+      title = `${name} at Adwa — Visit Chronicle`;
+    }
+  } catch {
+    /* keep template */
   }
 
-  const paragraphs = [
-    `${name} entered Adwa Museum as a visitor and left as a witness. The Negarit drum no longer summons armies — it summons memory.`,
-    path
-      ? `The path sounded like a drumline: ${path}. At each Bluetooth gate, the guide lifted its voice — quiet in the hush of halls, bright when courage demanded fire.`
-      : "The gates waited. The guide stood ready.",
-    visitedLocations
-      .filter((l) => !l.welcome)
-      .map((l) => `At ${l.name}, ${l.narrative.en.split(".")[0]}.`)
-      .join(" "),
-    "This is not a checklist of rooms. It is one river of story — Ethiopia's Adwa, still teaching that courage is collective. Today, that sound was Negarit.",
-  ].filter(Boolean);
+  // Ensure Amharic body when requested
+  if (lang === "am" && !/[\u1200-\u137F]/.test(body)) {
+    try {
+      const t = await translateText({
+        text: body,
+        sourceLanguage: "en",
+        targetLanguage: "am",
+      });
+      body = t.translation;
+    } catch {
+      /* keep */
+    }
+  }
 
   return {
-    provider: "blog-placeholder",
-    title: `${name} at Adwa — A Day Written in Victory`,
-    subtitle: "Your Negarit AI visit chronicle",
-    body: paragraphs.join("\n\n"),
+    provider: "negarit-blog-rag",
+    title,
+    subtitle: lang === "am" ? "Negarit AI memory" : "Your Negarit AI visit chronicle",
+    body,
     highlights: visitedLocations.map((l) => ({
-      location: l.name,
-      line: l.narrative.en.slice(0, 120) + "…",
+      location: lang === "am" ? l.nameAm || l.name : l.name,
+      line: (lang === "am" ? l.narrative.am : l.narrative.en).slice(0, 120) + "...",
     })),
   };
 }

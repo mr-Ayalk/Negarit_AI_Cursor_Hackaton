@@ -1,30 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { prepareBluetooth, useGuide } from "@/lib/guide-context";
+import { prepareWifi, useGuide } from "@/lib/guide-context";
 import { isSpeechRecognitionSupported } from "@/lib/voice";
+import { useTheme } from "@/lib/theme";
+import { WifiStatusCard } from "@/components/WifiStatusCard";
 
-const STEPS = ["You", "Bluetooth", "Voice", "Ready"];
+const STEPS = ["You", "WiFi", "Voice", "Ready"];
 
 export default function SetupPage() {
   const router = useRouter();
-  const { session, setVisitorName, setLanguage, completeSetup } = useGuide();
+  const { theme, toggleTheme } = useTheme();
+  const { session, setVisitorName, setLanguage, completeSetup, hydrated } = useGuide();
   const [step, setStep] = useState(0);
   const [name, setName] = useState(session.visitorName || "");
-  const [btMsg, setBtMsg] = useState("");
-  const [btOk, setBtOk] = useState(false);
+  const [wifiMsg, setWifiMsg] = useState("");
+  const [wifiOk, setWifiOk] = useState(false);
   const [micOk, setMicOk] = useState(false);
   const [micMsg, setMicMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const enableBt = async () => {
+  useEffect(() => {
+    if (hydrated && session.visitorName && !name) {
+      setName(session.visitorName);
+    }
+  }, [hydrated, session.visitorName, name]);
+
+  const enableWifi = async () => {
     setBusy(true);
-    const res = await prepareBluetooth();
-    setBtOk(res.ok);
-    setBtMsg(res.message);
+    const res = await prepareWifi();
+    setWifiOk(res.ok);
+    setWifiMsg(res.message);
     setBusy(false);
   };
 
@@ -36,12 +45,12 @@ export default function SetupPage() {
       setMicOk(true);
       setMicMsg(
         isSpeechRecognitionSupported()
-          ? "Microphone ready. You can ask Negarit by voice."
-          : "Microphone ready. Voice replies work; use Chrome for best speech recognition."
+          ? "Microphone ready. ElevenLabs hears you; Addis AI answers Amharic questions."
+          : "Microphone ready. Use Chrome for best voice support."
       );
     } catch {
       setMicOk(false);
-      setMicMsg("Microphone blocked. Enable it in browser settings to ask questions aloud.");
+      setMicMsg("Microphone blocked. Enable it in browser settings.");
     }
     setBusy(false);
   };
@@ -54,7 +63,7 @@ export default function SetupPage() {
 
   const canNext =
     (step === 0 && name.trim().length > 1) ||
-    (step === 1 && btOk) ||
+    (step === 1 && wifiOk) ||
     (step === 2 && micOk) ||
     step === 3;
 
@@ -63,10 +72,8 @@ export default function SetupPage() {
       <aside className="split-media">
         <Image src="/negarit-drum.png" alt="" fill priority sizes="50vw" style={{ objectFit: "cover" }} />
         <div
+          className="hero-scrim"
           style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(to top, rgba(22,15,12,0.9), transparent 55%)",
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-end",
@@ -78,17 +85,27 @@ export default function SetupPage() {
             Negarit AI
           </div>
           <p style={{ marginTop: 10, fontFamily: "var(--font-d)", fontSize: "1.35rem", maxWidth: 280 }}>
-            Prepare once. Walk freely. The halls will find you.
+            Connect to museum WiFi. Walk the halls. Hear Adwa speak.
           </p>
         </div>
       </aside>
 
       <div className="split-body">
-        <Link href="/" className="muted small" style={{ marginBottom: 12 }}>
-          ← Home
-        </Link>
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+          <Link href="/" className="muted small">
+            ← Home
+          </Link>
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+          >
+            {theme === "light" ? "☾" : "☀"}
+          </button>
+        </div>
         <h1 style={{ fontSize: "1.7rem" }}>Visitor setup</h1>
-        <p className="muted small">Bluetooth + microphone so Negarit can guide you.</p>
+        <p className="muted small">Museum WiFi + microphone so Negarit can guide you.</p>
 
         <div className="steps">
           {STEPS.map((_, i) => (
@@ -113,18 +130,23 @@ export default function SetupPage() {
                   </button>
                 ))}
               </div>
+              <p className="muted small">
+                Amharic conversations use <strong>Addis AI</strong>. Voice in/out uses{" "}
+                <strong>ElevenLabs</strong>.
+              </p>
             </>
           )}
           {step === 1 && (
             <>
-              <h2 style={{ fontSize: "1.15rem" }}>Turn on Bluetooth</h2>
+              <h2 style={{ fontSize: "1.15rem" }}>Connect to museum WiFi</h2>
               <p className="muted small">
-                Each hall broadcasts a beacon (5gna Ber, 6gna Ber, and more). Keep Bluetooth on while you walk.
+                Negarit reads the WiFi name this device is on. Switch networks and the name updates live.
               </p>
-              <button className="btn btn-primary btn-block" disabled={busy} onClick={enableBt}>
-                {btOk ? "Bluetooth ready" : "Enable Bluetooth"}
+              <WifiStatusCard />
+              <button className="btn btn-primary btn-block" disabled={busy} onClick={enableWifi}>
+                {wifiOk ? "WiFi check passed" : "Confirm WiFi ready"}
               </button>
-              {btMsg && <p className="muted small">{btMsg}</p>}
+              {wifiMsg && <p className="muted small">{wifiMsg}</p>}
             </>
           )}
           {step === 2 && (
@@ -143,9 +165,9 @@ export default function SetupPage() {
             <>
               <h2 style={{ fontSize: "1.15rem" }}>Ready, {name.trim()}</h2>
               <ul className="muted small stack" style={{ paddingLeft: "1.1rem" }}>
-                <li>Start at the gateway — Negarit welcomes you by name</li>
-                <li>Enter each hall to hear its story</li>
-                <li>Shop artifacts, tip the guide, end with your visit story</li>
+                <li>Start on Gateway WiFi — Negarit welcomes you by name</li>
+                <li>Move hall to hall; each WiFi zone unlocks its story</li>
+                <li>Ask in English or Amharic · shop & tip with Telebirr</li>
               </ul>
             </>
           )}

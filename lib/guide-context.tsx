@@ -11,7 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import { api, type CoffeePlace, type MuseumLocation, type VisitSession } from "./api";
-import { MuseumBeaconNetwork, type BeaconHit, prepareBluetooth, pairNearbyBeacon } from "./bluetooth";
+import { resolveLanguage } from "./lang";
+import {
+  MuseumWifiNetwork,
+  prepareWifi,
+  resolveSsid,
+  type WifiHit,
+} from "./wifi";
 import { listenOnce as voiceListen, measureVoiceLevel, speak, stopSpeaking } from "./voice";
 import { loadSession, saveSession, loadTranscript, saveTranscript } from "./session";
 
@@ -19,33 +25,39 @@ type GuideState = {
   session: VisitSession;
   locations: MuseumLocation[];
   currentLocation: MuseumLocation | null;
+  previousLocationId: string | null;
   transcript: { role: "guide" | "visitor" | "system"; text: string; at: number }[];
   speaking: boolean;
   listening: boolean;
   scanning: boolean;
+  transitioning: boolean;
+  transitionLabel: string;
   signals: Record<string, number>;
   adOpen: boolean;
   refreshmentOpen: boolean;
   refreshmentMessage: string;
   refreshmentPlace: CoffeePlace | null;
-  lastBeacon: BeaconHit | null;
+  lastWifi: WifiHit | null;
   loading: boolean;
+  hydrated: boolean;
   error: string | null;
   progress: number;
   setVisitorName: (name: string) => void;
   setLanguage: (lang: "en" | "am") => void;
   completeSetup: () => void;
   startTour: () => Promise<void>;
+  resumeTour: () => void;
   arriveAtHall: (id: string) => Promise<void>;
   goNextHall: () => Promise<void>;
   askGuide: (question?: string) => Promise<void>;
   listenOnce: () => Promise<void>;
-  scanBluetoothDevice: () => Promise<void>;
+  joinWifiZone: (ssidOrId: string) => Promise<void>;
   closeAd: () => void;
   closeRefreshment: () => void;
   speakText: (text: string, log?: boolean) => Promise<void>;
   resetVisit: () => void;
   checkRefreshmentNow: (force?: boolean) => Promise<void>;
+  translateText: (text: string, to: "en" | "am") => Promise<string>;
 };
 
 const defaultSession: VisitSession = {
@@ -67,20 +79,25 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [transitionLabel, setTransitionLabel] = useState("");
+  const [previousLocationId, setPreviousLocationId] = useState<string | null>(null);
   const [signals, setSignals] = useState<Record<string, number>>({});
   const [adOpen, setAdOpen] = useState(false);
   const [refreshmentOpen, setRefreshmentOpen] = useState(false);
   const [refreshmentMessage, setRefreshmentMessage] = useState("");
   const [refreshmentPlace, setRefreshmentPlace] = useState<CoffeePlace | null>(null);
-  const [lastBeacon, setLastBeacon] = useState<BeaconHit | null>(null);
+  const [lastWifi, setLastWifi] = useState<WifiHit | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
-  const network = useRef(new MuseumBeaconNetwork());
-  const handledBeacons = useRef(new Set<string>());
+  const network = useRef(new MuseumWifiNetwork());
+  const handledZones = useRef(new Set<string>());
   const refreshmentShown = useRef(false);
   const busyHall = useRef(false);
+  const queuedHall = useRef<string | null>(null);
+  const voiceBusy = useRef(false);
   const sessionRef = useRef(session);
   sessionRef.current = session;
 
@@ -99,9 +116,7 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     const lines = loadTranscript();
     if (saved) {
       setSession((s) => ({ ...s, ...saved }));
-      if (saved.visitedIds?.length) {
-        saved.visitedIds.forEach((id) => handledBeacons.current.add(id));
-      }
+      saved.visitedIds?.forEach((id) => handledZones.current.add(id));
     }
     if (lines.length) setTranscript(lines);
     setHydrated(true);
@@ -134,15 +149,23 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       setSpeaking(true);
       if (log) pushLine("guide", text);
       try {
-        await api.tts(text);
-      } catch {
-        /* server placeholder optional */
+        await speak(text, sessionRef.current.language);
+      } finally {
+        setSpeaking(false);
       }
-      await speak(text, sessionRef.current.language);
-      setSpeaking(false);
     },
     [pushLine]
   );
+
+  const translateTextFn = useCallback(async (text: string, to: "en" | "am") => {
+    const from = to === "am" ? "en" : "am";
+    try {
+      const res = await api.translate(text, from, to);
+      return res.translation || text;
+    } catch {
+      return text;
+    }
+  }, []);
 
   const markVisited = useCallback((id: string) => {
     setSession((s) => ({
@@ -152,58 +175,84 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const checkRefreshmentNow = useCallback(async (force = false) => {
-    if (refreshmentShown.current || !sessionRef.current.startedAt) return;
-    const minutes =
-      (Date.now() - new Date(sessionRef.current.startedAt).getTime()) / 60000;
-    const voiceLevel = await measureVoiceLevel(1600);
-    try {
-      const res = await api.refreshmentCheck({
-        visitMinutes: minutes,
-        voiceLevel,
-        currentLocationId: sessionRef.current.currentLocationId,
-        language: sessionRef.current.language,
-        force,
-      });
-      if (res.suggest && res.message) {
-        refreshmentShown.current = true;
-        setRefreshmentMessage(res.message);
-        setRefreshmentPlace(res.place || null);
-        setRefreshmentOpen(true);
-        await speakText(res.message);
+  const checkRefreshmentNow = useCallback(
+    async (force = false) => {
+      if (refreshmentShown.current || !sessionRef.current.startedAt) return;
+      const minutes =
+        (Date.now() - new Date(sessionRef.current.startedAt).getTime()) / 60000;
+      const voiceLevel = await measureVoiceLevel(1600);
+      try {
+        const res = await api.refreshmentCheck({
+          visitMinutes: minutes,
+          voiceLevel,
+          currentLocationId: sessionRef.current.currentLocationId,
+          language: sessionRef.current.language,
+          force,
+        });
+        if (res.suggest && res.message) {
+          refreshmentShown.current = true;
+          setRefreshmentMessage(res.message);
+          setRefreshmentPlace(res.place || null);
+          setRefreshmentOpen(true);
+          await speakText(res.message);
+        }
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
-    }
-  }, [speakText]);
+    },
+    [speakText]
+  );
 
   const enterHall = useCallback(
-    async (beaconId: string, hit?: BeaconHit) => {
-      if (busyHall.current) return;
-      if (handledBeacons.current.has(beaconId) && sessionRef.current.currentLocationId === beaconId) {
+    async (wifiId: string, hit?: WifiHit) => {
+      if (!sessionRef.current.startedAt) return;
+
+      if (busyHall.current) {
+        queuedHall.current = wifiId;
+        return;
+      }
+      if (handledZones.current.has(wifiId) && sessionRef.current.currentLocationId === wifiId) {
         return;
       }
       busyHall.current = true;
-      if (hit) setLastBeacon(hit);
+      if (hit) setLastWifi(hit);
 
       try {
-        const { location } = await api.resolveBeacon(beaconId, hit?.rssi);
-        const already = handledBeacons.current.has(location.id);
-        handledBeacons.current.add(location.id);
+        const { location } = await api.resolveBeacon(wifiId, hit?.rssi);
+        const already = handledZones.current.has(location.id);
+        setPreviousLocationId(sessionRef.current.currentLocationId);
+        setTransitionLabel(`Walking to ${location.name}…`);
+        setTransitioning(true);
+        handledZones.current.add(location.id);
         markVisited(location.id);
+
+        await new Promise((r) => setTimeout(r, 1100));
+        setTransitioning(false);
+
+        const lang = sessionRef.current.language;
 
         if (!already) {
           if (location.welcome) {
             const welcome = await api.welcome(
               sessionRef.current.visitorName || "guest",
-              sessionRef.current.language
+              lang
             );
             await speakText(welcome.text);
-          } else {
-            const script =
-              sessionRef.current.language === "am"
-                ? location.guideScript.am
-                : location.guideScript.en;
+          }
+
+          try {
+            const guided = await api.guide({
+              visitorName: sessionRef.current.visitorName || "guest",
+              locationId: location.id,
+              question:
+                lang === "am"
+                  ? `I just arrived at ${location.nameAm || location.name}. Reply in Amharic as Negarit using museum knowledge.`
+                  : `I just arrived at ${location.name}. Guide me as Negarit using the museum knowledge. Keep it spoken length.`,
+              language: lang,
+            });
+            await speakText(guided.reply);
+          } catch {
+            const script = lang === "am" ? location.guideScript.am : location.guideScript.en;
             await speakText(script);
           }
 
@@ -211,27 +260,28 @@ export function GuideProvider({ children }: { children: ReactNode }) {
             setTimeout(() => setAdOpen(true), 1800);
           }
 
-          // After 3 halls, offer refreshment (voice level + time aware)
-          if (handledBeacons.current.size >= 3) {
-            setTimeout(() => {
-              void checkRefreshmentNow(true);
-            }, 3500);
-          } else if (handledBeacons.current.size >= 2) {
-            setTimeout(() => {
-              void checkRefreshmentNow(false);
-            }, 4000);
+          if (handledZones.current.size >= 3) {
+            setTimeout(() => void checkRefreshmentNow(true), 3500);
+          } else if (handledZones.current.size >= 2) {
+            setTimeout(() => void checkRefreshmentNow(false), 4000);
           }
         } else {
-          const short =
-            sessionRef.current.language === "am"
-              ? `እንደገና በ${location.nameAm} ነዎት።`
-              : `You are back at ${location.name}. Ask me anything about this hall.`;
-          await speakText(short);
+          await speakText(
+            lang === "am"
+              ? `You are back at ${location.nameAm}. Ask me anything.`
+              : `You are back on the ${location.name} WiFi zone. Ask me anything by voice.`
+          );
         }
       } catch (e) {
-        pushLine("system", e instanceof Error ? e.message : "Could not resolve hall beacon");
+        setTransitioning(false);
+        pushLine("system", e instanceof Error ? e.message : "Could not resolve WiFi zone");
       } finally {
         busyHall.current = false;
+        const next = queuedHall.current;
+        queuedHall.current = null;
+        if (next && next !== sessionRef.current.currentLocationId) {
+          void enterHall(next);
+        }
       }
     },
     [checkRefreshmentNow, markVisited, pushLine, speakText]
@@ -239,7 +289,7 @@ export function GuideProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsub = network.current.subscribe((hit) => {
-      void enterHall(hit.beaconId, hit);
+      void enterHall(hit.wifiId, hit);
     });
     const pulse = setInterval(() => {
       if (network.current.isScanning()) {
@@ -254,13 +304,22 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     };
   }, [enterHall]);
 
+  const resumeTour = useCallback(() => {
+    const loc = sessionRef.current.currentLocationId || "gateway";
+    setScanning(true);
+    network.current.resumeAt(loc);
+    network.current.startAmbientPulse();
+  }, []);
+
   const startTour = useCallback(async () => {
-    handledBeacons.current.clear();
+    handledZones.current.clear();
     refreshmentShown.current = false;
+    queuedHall.current = null;
     setTranscript([]);
     setAdOpen(false);
     setRefreshmentOpen(false);
     setRefreshmentPlace(null);
+    setPreviousLocationId(null);
     setSession((s) => ({
       ...s,
       startedAt: new Date().toISOString(),
@@ -268,18 +327,32 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       currentLocationId: null,
       bluetoothReady: true,
     }));
-    pushLine("system", "Beacon network connected. Approaching museum gateway…");
+    pushLine("system", "Museum WiFi zones connected. Entering Gateway…");
     setScanning(true);
-    network.current.startNetwork();
+
+    let startId = "gateway";
+    try {
+      const live = await fetch("/api/wifi/current").then((r) => r.json());
+      if (live?.ssid) {
+        const hit = resolveSsid(String(live.ssid));
+        if (hit) startId = hit.wifiId;
+      }
+    } catch {
+      /* default gateway */
+    }
+
+    network.current.startNetwork(startId);
     network.current.startAmbientPulse();
   }, [pushLine]);
 
   const arriveAtHall = useCallback(async (id: string) => {
+    if (!sessionRef.current.startedAt) return;
     network.current.arriveAt(id);
     network.current.startAmbientPulse();
   }, []);
 
   const goNextHall = useCallback(async () => {
+    if (!sessionRef.current.startedAt) return;
     network.current.goToNextHall();
     network.current.startAmbientPulse();
   }, []);
@@ -288,74 +361,109 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     async (question?: string) => {
       const locId = sessionRef.current.currentLocationId;
       if (!locId) {
-        pushLine("system", "Enter a hall first, then ask your question.");
+        pushLine("system", "Enter a WiFi hall zone first, then ask.");
         return;
       }
+      if (voiceBusy.current) return;
+      voiceBusy.current = true;
+
       const q = question || "Tell me more about this place";
-      pushLine("visitor", q);
+      // Ethiopic script → force Amharic + Addis AI
+      const lang = resolveLanguage(sessionRef.current.language, q);
+      if (lang === "am" && sessionRef.current.language !== "am") {
+        setSession((s) => ({ ...s, language: "am" }));
+      }
+
+      setTranscript((t) => {
+        const last = t[t.length - 1];
+        if (last?.role === "visitor" && last.text === q) return t;
+        return [...t, { role: "visitor", text: q, at: Date.now() }];
+      });
       try {
         const res = await api.guide({
           visitorName: sessionRef.current.visitorName,
           locationId: locId,
           question: q,
-          language: sessionRef.current.language,
+          language: lang,
         });
         await speakText(res.reply);
       } catch (e) {
         pushLine("system", e instanceof Error ? e.message : "Guide failed");
+      } finally {
+        voiceBusy.current = false;
       }
     },
     [pushLine, speakText]
   );
 
   const listenOnce = useCallback(async () => {
+    if (voiceBusy.current || listening) return;
+    stopSpeaking();
     setListening(true);
+    pushLine(
+      "system",
+      sessionRef.current.language === "am"
+        ? "Listening… speak in Amharic (ElevenLabs + Addis AI)."
+        : "Listening… speak now (ElevenLabs)."
+    );
     try {
       const text = await voiceListen(sessionRef.current.language);
+      setListening(false);
       pushLine("visitor", text);
-      // Also notify server STT placeholder for pipeline completeness
-      try {
-        await api.stt(sessionRef.current.language);
-      } catch {
-        /* optional */
-      }
       await askGuide(text);
     } catch (e) {
-      // Fallback to server placeholder STT if browser STT fails
+      const msg = e instanceof Error ? e.message : "Listening failed";
+      pushLine("system", msg);
       try {
-        const stt = await api.stt(sessionRef.current.language);
-        pushLine("visitor", stt.text);
-        await askGuide(stt.text);
+        await speakText(
+          sessionRef.current.language === "am"
+            ? "Sorry, I could not hear you. Tap Ask and try again."
+            : "Sorry, I could not hear you. Tap Ask and try again.",
+          false
+        );
       } catch {
-        pushLine("system", e instanceof Error ? e.message : "Listening failed");
+        /* ignore */
       }
     } finally {
       setListening(false);
     }
-  }, [askGuide, pushLine]);
+  }, [askGuide, listening, pushLine, speakText]);
 
-  const scanBluetoothDevice = useCallback(async () => {
-    pushLine("system", "Scanning for a nearby museum beacon…");
-    const hit = await pairNearbyBeacon();
-    if (hit) {
-      network.current.arriveAt(hit.beaconId);
-      network.current.startAmbientPulse();
-      setScanning(true);
-    } else {
-      pushLine("system", "No beacon selected. Use the path buttons to enter each hall.");
-    }
-  }, [pushLine]);
+  const joinWifiZone = useCallback(
+    async (ssidOrId: string) => {
+      const hit = resolveSsid(ssidOrId);
+      if (hit) {
+        pushLine("system", `Joined WiFi zone ${hit.ssid}`);
+        if (!sessionRef.current.startedAt) {
+          setSession((s) => ({
+            ...s,
+            startedAt: s.startedAt || new Date().toISOString(),
+            bluetoothReady: true,
+          }));
+        }
+        network.current.arriveAt(hit.wifiId);
+        network.current.startAmbientPulse();
+        setScanning(true);
+        return;
+      }
+      pushLine("system", "Unknown SSID. Pick a hall on the map or use Adwa-* museum networks.");
+    },
+    [pushLine]
+  );
 
   const resetVisit = useCallback(() => {
     stopSpeaking();
     network.current.stop();
-    handledBeacons.current.clear();
+    handledZones.current.clear();
     refreshmentShown.current = false;
+    queuedHall.current = null;
     setScanning(false);
     setSignals({});
     setTranscript([]);
     setAdOpen(false);
     setRefreshmentOpen(false);
+    setTransitioning(false);
+    setPreviousLocationId(null);
     setSession((s) => ({
       ...s,
       startedAt: "",
@@ -368,17 +476,21 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     session,
     locations,
     currentLocation,
+    previousLocationId,
     transcript,
     speaking,
     listening,
     scanning,
+    transitioning,
+    transitionLabel,
     signals,
     adOpen,
     refreshmentOpen,
     refreshmentMessage,
     refreshmentPlace,
-    lastBeacon,
+    lastWifi,
     loading,
+    hydrated,
     error,
     progress,
     setVisitorName: (name) => setSession((s) => ({ ...s, visitorName: name })),
@@ -386,16 +498,18 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     completeSetup: () =>
       setSession((s) => ({ ...s, setupComplete: true, bluetoothReady: true })),
     startTour,
+    resumeTour,
     arriveAtHall,
     goNextHall,
     askGuide,
     listenOnce,
-    scanBluetoothDevice,
+    joinWifiZone,
     closeAd: () => setAdOpen(false),
     closeRefreshment: () => setRefreshmentOpen(false),
     speakText,
     resetVisit,
     checkRefreshmentNow,
+    translateText: translateTextFn,
   };
 
   return <GuideContext.Provider value={value}>{children}</GuideContext.Provider>;
@@ -407,4 +521,4 @@ export function useGuide() {
   return ctx;
 }
 
-export { prepareBluetooth };
+export { prepareWifi as prepareBluetooth, prepareWifi };

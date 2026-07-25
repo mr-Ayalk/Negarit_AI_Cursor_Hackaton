@@ -1,8 +1,8 @@
 import type { MuseumLocation } from "@/lib/api";
 
 /**
- * Adwa Museum Bluetooth beacon map.
- * Replace beaconId values with real beacon MAC/UUID when hardware is available.
+ * Adwa Museum WiFi zone map.
+ * Each hall has an SSID. Replace with real museum AP names when installed.
  */
 
 export type CoffeePlace = {
@@ -42,7 +42,7 @@ export const locations: MuseumLocation[] = [
       am: "እርስዎ በአድዋ ሙዚየም መግቢያ ላይ ነዎት — የ1896 ዓ.ም የኢትዮጵያ ድል ትዝታ። የነጋሪት ከበሮዎች ጦረኞችን ይጠሩ ነበር። ዛሬ እኔ የእርስዎ ነጋሪት ነኝ።",
     },
     guideScript: {
-      en: "Hello! Welcome to Adwa Museum. From now on, I will guide you through every hall. Keep Bluetooth on and walk freely — I will speak when you enter a new place.",
+      en: "Hello! Welcome to Adwa Museum. From now on, I will guide you through every hall. Stay on museum WiFi and walk freely — I will speak when you enter a new place.",
       am: "ሰላም! ወደ አድዋ ሙዚየም እንኳን በደህና መጡ። ከአሁን ጀምሮ በእያንዳንዱ አዳራሽ እመራዎታለሁ።",
     },
     ads: [],
@@ -296,14 +296,41 @@ export const products: Product[] = [
 ];
 
 export function getLocationByBeacon(beaconIdOrName: string) {
-  const key = String(beaconIdOrName || "").toLowerCase();
+  const raw = String(beaconIdOrName || "").trim();
+  const key = raw.toLowerCase();
+
+  // Live museum SSIDs → hall ids
+  const ssidMap: Record<string, string> = {
+    "adwa-staff": "gateway",
+    "adwa-museum-gateway": "gateway",
+    "negarit-gateway": "gateway",
+    "adwa-5gna-ber": "5gna-ber",
+    "negarit-5gna-ber": "5gna-ber",
+    "adwa-6gna-ber": "6gna-ber",
+    "negarit-6gna-ber": "6gna-ber",
+    "adwa-emperor-hall": "emperor-hall",
+    "negarit-emperor-hall": "emperor-hall",
+    "adwa-victory-court": "victory-court",
+    "negarit-victory-court": "victory-court",
+  };
+  const mappedId = ssidMap[key];
+  if (mappedId) {
+    const mapped = locations.find((l) => l.id === mappedId);
+    if (mapped) return mapped;
+  }
+
   return locations.find(
     (l) =>
       l.beaconId.toLowerCase() === key ||
       l.beaconName.toLowerCase() === key ||
-      l.id.toLowerCase() === key
+      l.id.toLowerCase() === key ||
+      key.includes(l.id.toLowerCase()) ||
+      `adwa-${l.id}`.includes(key) ||
+      key.includes(`adwa-${l.id}`)
   );
 }
+
+export const getLocationByWifi = getLocationByBeacon;
 
 export function getLocationById(id: string) {
   return locations.find((l) => l.id === id);

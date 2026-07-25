@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 const AMOUNTS = [20, 50, 100, 200];
@@ -11,20 +11,32 @@ export function TipSheet({ open, onClose }: Props) {
   const [amount, setAmount] = useState(50);
   const [phone, setPhone] = useState("");
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setMessage(null);
+      setOk(false);
+      setBusy(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
   const send = async () => {
     setBusy(true);
-    setDone(null);
+    setMessage(null);
+    setOk(false);
     try {
-      const { payment, message } = await api.tip(amount, phone || undefined);
+      const { payment, message: msg } = await api.tip(amount, phone || undefined);
       await new Promise((r) => setTimeout(r, 700));
       await api.confirmPayment(payment.id);
-      setDone(`${message} ${amount} ETB received.`);
+      setMessage(`${msg} ${amount} ETB received.`);
+      setOk(true);
     } catch (e) {
-      setDone(e instanceof Error ? e.message : "Tip failed");
+      setMessage(e instanceof Error ? e.message : "Tip failed");
+      setOk(false);
     } finally {
       setBusy(false);
     }
@@ -61,7 +73,11 @@ export function TipSheet({ open, onClose }: Props) {
         <button className="btn btn-primary btn-block" disabled={busy} onClick={send}>
           {busy ? "Sending…" : `Send ${amount} ETB`}
         </button>
-        {done && <p className="small" style={{ color: "var(--ok)" }}>{done}</p>}
+        {message && (
+          <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>
+            {message}
+          </p>
+        )}
       </div>
     </div>
   );

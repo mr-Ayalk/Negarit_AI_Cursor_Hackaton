@@ -27,10 +27,26 @@ function json(data: unknown, status = 200) {
 }
 
 export async function GET(req: NextRequest, ctx: Ctx) {
+  try {
   const path = ((await ctx.params).path || []).join("/");
 
   if (path === "health" || path === "") {
     return json({ ok: true, service: "negarit-ai", time: new Date().toISOString() });
+  }
+  if (path === "wifi/current") {
+    const { detectDeviceWifi } = await import("@/lib/server/wifi-detect");
+    const info = await detectDeviceWifi();
+    return json({ ...info, time: new Date().toISOString() });
+  }
+  if (path === "ai/status") {
+    const { hasElevenLabsKey } = await import("@/lib/server/elevenlabs");
+    const { getKnowledgeChunks } = await import("@/lib/server/rag");
+    return json({
+      addisAi: Boolean(process.env.ADDIS_AI_API_KEY),
+      elevenLabs: hasElevenLabsKey(),
+      wifiDetect: true,
+      ragChunks: getKnowledgeChunks().length,
+    });
   }
   if (path === "locations") return json({ locations });
   if (path.startsWith("locations/")) {
@@ -62,6 +78,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   }
 
   return json({ error: "Not found", path }, 404);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Server error";
+    return json({ error: message }, 500);
+  }
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
@@ -69,13 +89,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   const body = await req.json().catch(() => ({}));
 
   try {
-    if (path === "beacon/resolve") {
-      const location = getLocationByBeacon(body.beaconId || body.beaconName);
+    if (path === "beacon/resolve" || path === "wifi/resolve") {
+      const location = getLocationByBeacon(
+        body.wifiId || body.ssid || body.beaconId || body.beaconName
+      );
       if (!location) {
         return json(
           {
-            error: "Unknown beacon",
-            tip: "Use: gateway, 5gna-ber, 6gna-ber, emperor-hall, victory-court",
+            error: "Unknown WiFi zone",
+            tip: "Use: gateway, 5gna-ber, 6gna-ber, emperor-hall, victory-court (or SSIDs Adwa-*)",
           },
           404
         );
@@ -83,6 +105,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       const rssi = body.rssi;
       return json({
         matched: true,
+        kind: "wifi-zone",
+        ssid: location.beaconName?.replace("Negarit-", "Adwa-") || location.id,
         rssi: rssi ?? null,
         location,
         proximity:
@@ -96,36 +120,88 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       });
     }
 
-    if (path === "ai/stt") return json(await speechToText(body));
+    if (path === "ai/translate") {
+      const { translateGuideText } = await import("@/lib/server/ai");
+      if (!body.text) return json({ error: "text is required" }, 400);
+      const from = body.from === "am" ? "am" : "en";
+      const to = body.to === "am" ? "am" : "en";
+      const result = await translateGuideText({ text: body.text, from, to });
+      return json(result);
+    }
+
+    if (path === "ai/stt") {
+      const result = await speechToText(body);
+      if (!result.text) {
+        return json(
+          { error: result.tip || "Speech-to-text failed", ...result },
+          result.provider === "browser-stt-needed" ? 400 : 502
+        );
+      }
+      return json(result);
+    }
     if (path === "ai/tts") {
       if (!body.text) return json({ error: "text is required" }, 400);
-      return json(await textToSpeech(body));
+      return json(
+        await textToSpeech({
+          text: body.text,
+          voice: body.voice,
+          language: body.language === "am" ? "am" : "en",
+        })
+      );
+    }
+    if (path === "ai/status") {
+      const { hasElevenLabsKey } = await import("@/lib/server/elevenlabs");
+      const { getKnowledgeChunks } = await import("@/lib/server/rag");
+      return json({
+        addisAi: Boolean(process.env.ADDIS_AI_API_KEY),
+        elevenLabs: hasElevenLabsKey(),
+        wifiDetect: true,
+        ragChunks: getKnowledgeChunks().length,
+      });
     }
     if (path === "ai/guide") {
       const location = body.locationId ? getLocationById(body.locationId) : null;
-      const result = await generateGuideReply({ ...body, location });
-      const tts = await textToSpeech({ text: result.reply });
-      return json({ ...result, tts });
+      const language = body.language === "am" ? "am" : "en";
+      // Addis AI + RAG; client plays ElevenLabs TTS (avoid double generation)
+      const result = await generateGuideReply({ ...body, location, language });
+      return json({
+        ...result,
+        tts: { provider: "client-elevenlabs", durationMs: 0, text: result.reply },
+      });
     }
     if (path === "ai/welcome") {
       const gateway = getLocationById("gateway");
       const name = body.visitorName?.trim() || "honored guest";
-      const language = body.language || "en";
-      const text =
-        language === "am"
-          ? `ሰላም ${name}፣ ወደ አድዋ ሙዚየም እንኳን በደህና መጡ። ከአሁን ጀምሮ እመራዎታለሁ።`
-          : `Hello ${name}, welcome to Adwa Museum. From now on, I will guide you through every hall.`;
-      const tts = await textToSpeech({ text });
-      return json({ text, tts, location: gateway });
+      const language = body.language === "am" ? "am" : "en";
+      let text = `Hello ${name}, welcome to Adwa Museum. From now on, I will guide you through every hall.`;
+      if (language === "am") {
+        try {
+          const { translateGuideText } = await import("@/lib/server/ai");
+          const t = await translateGuideText({
+            text,
+            from: "en",
+            to: "am",
+          });
+          if (t.translation?.trim()) text = t.translation.trim();
+        } catch {
+          text = `Selam ${name}. Welcome to Adwa Museum.`;
+        }
+      }
+      return json({
+        text,
+        tts: { provider: "client-elevenlabs", durationMs: 0, text },
+        location: gateway,
+      });
     }
     if (path === "ai/refreshment-check") {
       const {
         visitMinutes = 0,
         voiceLevel = 0.5,
         currentLocationId,
-        language = "en",
+        language: langRaw = "en",
         force = false,
       } = body;
+      const language = langRaw === "am" ? "am" : "en";
       const lowVoice = voiceLevel < 0.2;
       const longVisit = visitMinutes >= 8;
       const shouldSuggest = force || lowVoice || longVisit;
@@ -143,22 +219,33 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         language === "am"
           ? `እረፍት ይፈልጉ ይሆናል። ${place.nameAm} አቅራቢያ ነው — ${place.specialty}። ${place.distance}።`
           : `May I suggest a pause? ${reasons.join(", and ")}. ${place.name} is nearby (${place.distance}) — ${place.specialty}. ${place.reason}`;
-      const tts = await textToSpeech({ text: message });
-      return json({ suggest: true, reasons, place, message, tts });
+      return json({
+        suggest: true,
+        reasons,
+        place,
+        message,
+        tts: { provider: "client-elevenlabs", durationMs: 0, text: message },
+      });
     }
     if (path === "ai/summary") {
+      const language = body.language === "am" ? "am" : "en";
       const visitedLocations = (body.visitedLocationIds || [])
         .map((id: string) => getLocationById(id))
         .filter(Boolean);
       const blog = await generateVisitBlog({
         visitorName: body.visitorName,
         visitedLocations,
-        language: body.language,
+        language,
       });
-      const tts = await textToSpeech({
-        text: `${blog.title}. ${blog.body.slice(0, 280)}`,
+      return json({
+        blog,
+        tts: {
+          provider: "client-elevenlabs",
+          durationMs: 0,
+          text: `${blog.title}. ${blog.body.slice(0, 280)}`,
+        },
+        visitedCount: visitedLocations.length,
       });
-      return json({ blog, tts, visitedCount: visitedLocations.length });
     }
     if (path === "ai/research") return json(await researchEnrichment(body));
 

@@ -27,14 +27,7 @@ export default function HomePage() {
           sizes="100vw"
           style={{ objectFit: "cover", objectPosition: "center 35%" }}
         />
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "linear-gradient(to top, #160f0c 5%, rgba(22,15,12,0.72) 48%, rgba(22,15,12,0.2) 100%)",
-          }}
-        />
+        <div className="hero-scrim" />
         <div
           className="wrap"
           style={{
@@ -57,7 +50,7 @@ export default function HomePage() {
             Negarit AI
           </h1>
           <p className="muted" style={{ maxWidth: 440, marginBottom: "1.4rem", fontSize: "1.05rem" }}>
-            Your Bluetooth guide through Adwa. Walk a hall, hear its story, shop artifacts, tip the
+            Your WiFi guide through Adwa. Walk a hall, hear its story, shop artifacts, tip the
             guide, and leave with a visit story.
           </p>
           {error && <p style={{ color: "#e8a090", marginBottom: 10 }}>{error}</p>}
@@ -79,8 +72,8 @@ export default function HomePage() {
       <section className="wrap" style={{ paddingBlock: "2.25rem" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.9rem" }}>
           {[
-            ["Beacon halls", "Gateway, 5gna Ber, 6gna Ber, Emperor Hall, Victory Court — each place speaks."],
-            ["Voice in, voice out", "Ask out loud. Negarit answers with the story of where you stand."],
+            ["WiFi halls", "Gateway, 5gna Ber, 6gna Ber, Emperor Hall, Victory Court — each zone speaks."],
+            ["Voice in, voice out", "Ask aloud. Negarit + Addis AI answer in English or Amharic."],
             ["Shop & tip", "Buy hall artifacts or tip the guide with Telebirr."],
           ].map(([t, b]) => (
             <div key={t} className="panel">
