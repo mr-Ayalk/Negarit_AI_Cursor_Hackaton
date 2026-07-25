@@ -167,7 +167,7 @@ export default function SetupPage() {
               <ul className="muted small stack" style={{ paddingLeft: "1.1rem" }}>
                 <li>Start on Gateway WiFi — Negarit welcomes you by name</li>
                 <li>Move hall to hall; each WiFi zone unlocks its story</li>
-                <li>Ask in English or Amharic · shop & tip with Telebirr</li>
+                <li>Ask in English or Amharic · shop & tip with Chapa</li>
               </ul>
             </>
           )}

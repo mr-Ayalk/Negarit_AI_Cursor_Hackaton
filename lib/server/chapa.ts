@@ -125,7 +125,11 @@ export async function initializeChapaPayment({
       json?.data?.message ||
       (typeof json === "string" ? json : null) ||
       `Chapa initialize failed (${res.status})`;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    let text = typeof msg === "string" ? msg : JSON.stringify(msg);
+    if (/validation\.email|email/i.test(text)) {
+      text = "Chapa rejected this email. Use a real address (e.g. Gmail or Yahoo).";
+    }
+    throw new Error(text);
   }
 
   const checkoutUrl = json?.data?.checkout_url as string | undefined;

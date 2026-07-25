@@ -97,7 +97,7 @@ export function TipSheet({ open, onClose }: Props) {
         <input
           className="field"
           type="email"
-          placeholder="Email for receipt"
+          placeholder="Email (e.g. you@gmail.com)"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
