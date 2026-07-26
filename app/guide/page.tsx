@@ -5,19 +5,19 @@ import { useRouter } from "next/navigation";
 import { useGuide } from "@/lib/guide-context";
 import { MUSEUM_WIFI_ZONES } from "@/lib/wifi";
 import { MuseumMap } from "@/components/MuseumMap";
-import { AdModal } from "@/components/AdModal";
+import { TourAdInterrupt } from "@/components/TourAdInterrupt";
 import { RefreshmentModal } from "@/components/RefreshmentModal";
 import { TipSheet } from "@/components/TipSheet";
 import { SiteHeader } from "@/components/SiteHeader";
 import { WifiStatusCard } from "@/components/WifiStatusCard";
 import { HallTransition } from "@/components/HallTransition";
+import { CafeSpotlight } from "@/components/CafeSpotlight";
 
 export default function GuidePage() {
   const router = useRouter();
   const g = useGuide();
   const [started, setStarted] = useState(false);
   const [tipOpen, setTipOpen] = useState(false);
-  const [forceAd, setForceAd] = useState(false);
   const [ssidInput, setSsidInput] = useState("");
 
   const onWifiChange = useCallback(
@@ -76,6 +76,12 @@ export default function GuidePage() {
         <div style={{ marginBottom: "1rem" }}>
           <WifiStatusCard onSsidChange={started ? onWifiChange : undefined} />
         </div>
+
+        {started && (
+          <div style={{ marginBottom: "1rem" }}>
+            <CafeSpotlight compact />
+          </div>
+        )}
 
         {g.listening && (
           <div className="listening-banner" style={{ marginBottom: "0.85rem" }}>
@@ -173,11 +179,6 @@ export default function GuidePage() {
                       Write visit story
                     </button>
                   )}
-                  {loc?.ads?.length ? (
-                    <button className="btn btn-ghost" onClick={() => setForceAd(true)}>
-                      Shop
-                    </button>
-                  ) : null}
                 </div>
               </div>
             </div>
@@ -260,19 +261,18 @@ export default function GuidePage() {
           >
             More
           </button>
-          <button onClick={() => loc?.ads?.length && setForceAd(true)}>Shop</button>
           <button onClick={() => setTipOpen(true)}>Tip</button>
+          <button onClick={() => void g.checkRefreshmentNow(true)}>Cafe</button>
           <button onClick={() => router.push("/summary")}>Story</button>
         </div>
       </nav>
 
-      <AdModal
-        open={g.adOpen || forceAd}
+      <TourAdInterrupt
+        open={g.adOpen}
+        mode={g.adMode}
         location={loc}
-        onClose={() => {
-          g.closeAd();
-          setForceAd(false);
-        }}
+        ads={g.adItems}
+        onClose={g.closeAd}
       />
       <RefreshmentModal
         open={g.refreshmentOpen}

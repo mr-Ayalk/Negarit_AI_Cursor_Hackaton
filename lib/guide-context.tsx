@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type CoffeePlace, type MuseumLocation, type VisitSession } from "./api";
+import { api, type AdItem, type CoffeePlace, type MuseumLocation, type VisitSession } from "./api";
 import { resolveLanguage } from "./lang";
 import {
   MuseumWifiNetwork,
@@ -20,6 +20,8 @@ import {
 } from "./wifi";
 import { listenOnce as voiceListen, measureVoiceLevel, speak, stopSpeaking } from "./voice";
 import { loadSession, saveSession, loadTranscript, saveTranscript } from "./session";
+
+export type AdInterruptMode = "exhibit" | "marketplace";
 
 type GuideState = {
   session: VisitSession;
@@ -34,6 +36,8 @@ type GuideState = {
   transitionLabel: string;
   signals: Record<string, number>;
   adOpen: boolean;
+  adMode: AdInterruptMode;
+  adItems: AdItem[];
   refreshmentOpen: boolean;
   refreshmentMessage: string;
   refreshmentPlace: CoffeePlace | null;
@@ -84,6 +88,8 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const [previousLocationId, setPreviousLocationId] = useState<string | null>(null);
   const [signals, setSignals] = useState<Record<string, number>>({});
   const [adOpen, setAdOpen] = useState(false);
+  const [adMode, setAdMode] = useState<AdInterruptMode>("exhibit");
+  const [adItems, setAdItems] = useState<AdItem[]>([]);
   const [refreshmentOpen, setRefreshmentOpen] = useState(false);
   const [refreshmentMessage, setRefreshmentMessage] = useState("");
   const [refreshmentPlace, setRefreshmentPlace] = useState<CoffeePlace | null>(null);
@@ -95,11 +101,16 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const network = useRef(new MuseumWifiNetwork());
   const handledZones = useRef(new Set<string>());
   const refreshmentShown = useRef(false);
+  const exhibitAdsShown = useRef(new Set<string>());
+  const marketplaceShown = useRef(false);
+  const adCloseResolver = useRef<(() => void) | null>(null);
   const busyHall = useRef(false);
   const queuedHall = useRef<string | null>(null);
   const voiceBusy = useRef(false);
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const locationsRef = useRef(locations);
+  locationsRef.current = locations;
 
   const currentLocation = useMemo(
     () => locations.find((l) => l.id === session.currentLocationId) || null,
@@ -203,6 +214,45 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     [speakText]
   );
 
+  /** Blocks the tour until the visitor skips or finishes the shop interrupt */
+  const openAdInterrupt = useCallback((mode: AdInterruptMode, items: AdItem[]) => {
+    if (!items.length) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      adCloseResolver.current = resolve;
+      setAdMode(mode);
+      setAdItems(items);
+      setAdOpen(true);
+    });
+  }, []);
+
+  const closeAd = useCallback(() => {
+    setAdOpen(false);
+    setAdItems([]);
+    const done = adCloseResolver.current;
+    adCloseResolver.current = null;
+    done?.();
+  }, []);
+
+  const marketplaceAdsFrom = useCallback((locs: MuseumLocation[], current: MuseumLocation) => {
+    const pool: AdItem[] = [];
+    const seen = new Set<string>();
+    const push = (ads: AdItem[]) => {
+      for (const a of ads) {
+        if (seen.has(a.productId)) continue;
+        seen.add(a.productId);
+        pool.push(a);
+      }
+    };
+    push(current.ads || []);
+    for (const loc of locs) {
+      if (loc.id === current.id) continue;
+      if (loc.amenities?.includes("gift-shop") || loc.id === "5gna-ber" || loc.id === "victory-court") {
+        push(loc.ads || []);
+      }
+    }
+    return pool.slice(0, 4);
+  }, []);
+
   const enterHall = useCallback(
     async (wifiId: string, hit?: WifiHit) => {
       if (!sessionRef.current.startedAt) return;
@@ -220,7 +270,8 @@ export function GuideProvider({ children }: { children: ReactNode }) {
       try {
         const { location } = await api.resolveBeacon(wifiId, hit?.rssi);
         const already = handledZones.current.has(location.id);
-        setPreviousLocationId(sessionRef.current.currentLocationId);
+        const previousId = sessionRef.current.currentLocationId;
+        setPreviousLocationId(previousId);
         setTransitionLabel(`Walking to ${location.name}…`);
         setTransitioning(true);
         handledZones.current.add(location.id);
@@ -230,8 +281,34 @@ export function GuideProvider({ children }: { children: ReactNode }) {
         setTransitioning(false);
 
         const lang = sessionRef.current.language;
+        const locs = locationsRef.current;
+        const prevLoc = locs.find((l) => l.id === previousId);
+        const toolsHall =
+          previousId === "5gna-ber" ||
+          previousId === "6gna-ber" ||
+          location.id === "5gna-ber" ||
+          location.id === "victory-court";
+        const nearShop =
+          location.amenities?.includes("gift-shop") ||
+          prevLoc?.amenities?.includes("gift-shop");
 
         if (!already) {
+          // Way 2 — mid-tour marketplace interrupt (near shop / tools path)
+          if (
+            !marketplaceShown.current &&
+            handledZones.current.size >= 2 &&
+            (nearShop || toolsHall)
+          ) {
+            marketplaceShown.current = true;
+            stopSpeaking();
+            const marketLine =
+              lang === "am"
+                ? "ቆሙ — ዜመን ገበያ አቅራቢያ ነዎት። ባህላዊ መሳሪያዎችና ልብሶች እዚህ አሉ። ቱርን ከመቀጠልዎ በፊት ይመልከቱ።"
+                : "Hold on — you are near Zemen Gebeya. Traditional tools and crafts from halls like this are here. Take a look before you continue.";
+            await speakText(marketLine);
+            await openAdInterrupt("marketplace", marketplaceAdsFrom(locs, location));
+          }
+
           if (location.welcome) {
             const welcome = await api.welcome(
               sessionRef.current.visitorName || "guest",
@@ -256,8 +333,16 @@ export function GuideProvider({ children }: { children: ReactNode }) {
             await speakText(script);
           }
 
-          if (location.ads?.length) {
-            setTimeout(() => setAdOpen(true), 1800);
+          // Way 1 — exhibit-matched interrupt after the hall story
+          if (location.ads?.length && !exhibitAdsShown.current.has(location.id)) {
+            exhibitAdsShown.current.add(location.id);
+            stopSpeaking();
+            const exhibitLine =
+              lang === "am"
+                ? `ከ${location.nameAm} ጋር የተያያዘ ነገር በሙዚየም ሱቅ አለ። ቱርን ከመቀጠልዎ በፊት ይመልከቱ።`
+                : `A piece connected to ${location.name} is available in the museum shop. Pause here before you walk on.`;
+            await speakText(exhibitLine);
+            await openAdInterrupt("exhibit", location.ads);
           }
 
           if (handledZones.current.size >= 3) {
@@ -284,7 +369,14 @@ export function GuideProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [checkRefreshmentNow, markVisited, pushLine, speakText]
+    [
+      checkRefreshmentNow,
+      markVisited,
+      marketplaceAdsFrom,
+      openAdInterrupt,
+      pushLine,
+      speakText,
+    ]
   );
 
   useEffect(() => {
@@ -314,9 +406,14 @@ export function GuideProvider({ children }: { children: ReactNode }) {
   const startTour = useCallback(async () => {
     handledZones.current.clear();
     refreshmentShown.current = false;
+    exhibitAdsShown.current.clear();
+    marketplaceShown.current = false;
+    adCloseResolver.current?.();
+    adCloseResolver.current = null;
     queuedHall.current = null;
     setTranscript([]);
     setAdOpen(false);
+    setAdItems([]);
     setRefreshmentOpen(false);
     setRefreshmentPlace(null);
     setPreviousLocationId(null);
@@ -456,11 +553,16 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     network.current.stop();
     handledZones.current.clear();
     refreshmentShown.current = false;
+    exhibitAdsShown.current.clear();
+    marketplaceShown.current = false;
+    adCloseResolver.current?.();
+    adCloseResolver.current = null;
     queuedHall.current = null;
     setScanning(false);
     setSignals({});
     setTranscript([]);
     setAdOpen(false);
+    setAdItems([]);
     setRefreshmentOpen(false);
     setTransitioning(false);
     setPreviousLocationId(null);
@@ -485,6 +587,8 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     transitionLabel,
     signals,
     adOpen,
+    adMode,
+    adItems,
     refreshmentOpen,
     refreshmentMessage,
     refreshmentPlace,
@@ -504,7 +608,7 @@ export function GuideProvider({ children }: { children: ReactNode }) {
     askGuide,
     listenOnce,
     joinWifiZone,
-    closeAd: () => setAdOpen(false),
+    closeAd,
     closeRefreshment: () => setRefreshmentOpen(false),
     speakText,
     resetVisit,

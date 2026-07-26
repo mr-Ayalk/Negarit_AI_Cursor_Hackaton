@@ -15,15 +15,32 @@ export type CoffeePlace = {
   openUntil: string;
   nearLocationId: string;
   reason: string;
+  /** Neighborhood / landmark label */
+  area?: string;
+  areaAm?: string;
+  image?: string;
+  featured?: boolean;
 };
+
+export type ProductCategory =
+  | "clothing"
+  | "tools"
+  | "accessories"
+  | "art"
+  | "souvenir";
 
 export type Product = {
   id: string;
   name: string;
+  nameAm: string;
   description: string;
   priceETB: number;
-  category: string;
-  locationId: string;
+  category: ProductCategory;
+  locationId?: string;
+  image: string;
+  /** CSS object-position — crop variety from shared shop photo */
+  imageFocus?: string;
+  badge?: string;
 };
 
 export const locations: MuseumLocation[] = [
@@ -84,7 +101,7 @@ export const locations: MuseumLocation[] = [
         productId: "prod-warrior-cloak",
         title: "Replica Warrior Cloak",
         subtitle: "Museum craft collection",
-        image: "/ads/warrior-cloak.jpg",
+        image: "/shop.jpg",
         priceETB: 2500,
         cta: "Pay with Chapa",
       },
@@ -93,7 +110,7 @@ export const locations: MuseumLocation[] = [
         productId: "prod-shield-print",
         title: "Shield Art Print",
         subtitle: "Limited Adwa series",
-        image: "/ads/shield-print.jpg",
+        image: "/shop.jpg",
         priceETB: 850,
         cta: "Pay with Chapa",
       },
@@ -131,7 +148,7 @@ export const locations: MuseumLocation[] = [
         productId: "prod-map-scroll",
         title: "Adwa Campaign Map Scroll",
         subtitle: "Hand-finished parchment style",
-        image: "/ads/map-scroll.jpg",
+        image: "/shop.jpg",
         priceETB: 1200,
         cta: "Pay with Chapa",
       },
@@ -169,7 +186,7 @@ export const locations: MuseumLocation[] = [
         productId: "prod-taytu-scarf",
         title: "Taytu Heritage Scarf",
         subtitle: "Woven motif collection",
-        image: "/ads/taytu-scarf.jpg",
+        image: "/shop.jpg",
         priceETB: 1800,
         cta: "Pay with Chapa",
       },
@@ -207,7 +224,25 @@ export const locations: MuseumLocation[] = [
         productId: "prod-victory-medal",
         title: "Commemorative Victory Medal",
         subtitle: "Museum exclusive",
-        image: "/ads/victory-medal.jpg",
+        image: "/shop.jpg",
+        priceETB: 950,
+        cta: "Buy with Chapa",
+      },
+      {
+        id: "ad-mesob",
+        productId: "prod-mesob-basket",
+        title: "Mesob — Woven Food Basket",
+        subtitle: "Traditional craft · Zemen Gebeya",
+        image: "/shop.jpg",
+        priceETB: 2200,
+        cta: "Buy with Chapa",
+      },
+      {
+        id: "ad-jebena",
+        productId: "prod-jebena-set",
+        title: "Jebena Coffee Pot",
+        subtitle: "Highland tool · Zemen Gebeya",
+        image: "/shop.jpg",
         priceETB: 950,
         cta: "Pay with Chapa",
       },
@@ -218,6 +253,22 @@ export const locations: MuseumLocation[] = [
 
 export const coffeePlaces: CoffeePlace[] = [
   {
+    id: "mekonen-baklava",
+    name: "Mekonen Baklava",
+    nameAm: "መኮንን ባቅላባ",
+    distance: "Piazza · short ride from Adwa Museum",
+    specialty: "Baklava, coffee & pastry",
+    priceRange: "80–250 ETB",
+    openUntil: "21:00",
+    nearLocationId: "gateway",
+    area: "Piazza",
+    areaAm: "ፒያሳ",
+    image: "/baklava.jpg",
+    featured: true,
+    reason:
+      "Partner cafe at Piazza — fresh baklava and coffee when you need a sweet pause from the halls.",
+  },
+  {
     id: "bunna-house",
     name: "Bunna House Café",
     nameAm: "ቡና ሃውስ ካፌ",
@@ -226,6 +277,7 @@ export const coffeePlaces: CoffeePlace[] = [
     priceRange: "80–150 ETB",
     openUntil: "18:00",
     nearLocationId: "emperor-hall",
+    area: "Adwa Museum",
     reason: "Quiet seating and a full coffee ceremony — perfect midway refreshment.",
   },
   {
@@ -237,6 +289,7 @@ export const coffeePlaces: CoffeePlace[] = [
     priceRange: "60–120 ETB",
     openUntil: "19:00",
     nearLocationId: "victory-court",
+    area: "Victory Court",
     reason: "Open-air terrace with museum views.",
   },
   {
@@ -248,50 +301,210 @@ export const coffeePlaces: CoffeePlace[] = [
     priceRange: "50–100 ETB",
     openUntil: "17:30",
     nearLocationId: "5gna-ber",
+    area: "5gna Ber",
     reason: "Light snacks and cool drinks when energy dips.",
   },
 ];
 
 export const products: Product[] = [
   {
+    id: "prod-habesha-kemis-tilet",
+    name: "Habesha Kemis — Gold Tilet",
+    nameAm: "ሐበሻ ቀሚስ — ወርቃማ ጥልፍ",
+    description:
+      "Handwoven white cotton dress with intricate gold and brown tilet embroidery. Classic highland formal wear.",
+    priceETB: 6800,
+    category: "clothing",
+    locationId: "emperor-hall",
+    image: "/shop.jpg",
+    imageFocus: "12% 35%",
+    badge: "Bestseller",
+  },
+  {
+    id: "prod-habesha-kemis-red",
+    name: "Habesha Kemis — Crimson Border",
+    nameAm: "ሐበሻ ቀሚስ — ቀይ ጥልፍ",
+    description:
+      "Elegant kemis with deep red tilet borders. Tailored for ceremonies and museum evenings.",
+    priceETB: 7200,
+    category: "clothing",
+    locationId: "emperor-hall",
+    image: "/shop.jpg",
+    imageFocus: "18% 42%",
+  },
+  {
+    id: "prod-netela-shawl",
+    name: "Netela Shawl — Striped Weave",
+    nameAm: "ነጠላ ሻውል",
+    description:
+      "Lightweight handwoven netela with traditional multi-color stripes. Wear over kemis or alone.",
+    priceETB: 1850,
+    category: "clothing",
+    locationId: "5gna-ber",
+    image: "/shop.jpg",
+    imageFocus: "55% 55%",
+    badge: "Handwoven",
+  },
+  {
     id: "prod-warrior-cloak",
     name: "Replica Warrior Cloak",
+    nameAm: "የጦረኛ ካባ",
     description: "Handcrafted cloak inspired by Adwa-era warrior attire.",
     priceETB: 2500,
-    category: "apparel",
+    category: "clothing",
     locationId: "5gna-ber",
-  },
-  {
-    id: "prod-shield-print",
-    name: "Shield Art Print",
-    description: "Museum-quality print of a traditional highland shield motif.",
-    priceETB: 850,
-    category: "art",
-    locationId: "5gna-ber",
-  },
-  {
-    id: "prod-map-scroll",
-    name: "Adwa Campaign Map Scroll",
-    description: "Decorative scroll of the 1896 campaign routes.",
-    priceETB: 1200,
-    category: "souvenir",
-    locationId: "6gna-ber",
+    image: "/shop.jpg",
+    imageFocus: "28% 30%",
   },
   {
     id: "prod-taytu-scarf",
     name: "Taytu Heritage Scarf",
+    nameAm: "የጣይቱ ሻርብ",
     description: "Soft woven scarf with Empress Taytu inspired patterns.",
     priceETB: 1800,
-    category: "apparel",
+    category: "clothing",
     locationId: "emperor-hall",
+    image: "/shop.jpg",
+    imageFocus: "70% 45%",
+  },
+  {
+    id: "prod-mesob-basket",
+    name: "Mesob — Woven Food Basket",
+    nameAm: "መሶብ",
+    description:
+      "Traditional coiled-grass mesob. Iconic Ethiopian table centerpiece for injera and feast.",
+    priceETB: 2200,
+    category: "tools",
+    locationId: "victory-court",
+    image: "/shop.jpg",
+    imageFocus: "8% 78%",
+    badge: "Craft",
+  },
+  {
+    id: "prod-jebena-set",
+    name: "Jebena Coffee Pot",
+    nameAm: "ጀበና",
+    description:
+      "Clay jebena for authentic buna ceremony. Heat-ready, museum artisan glaze.",
+    priceETB: 950,
+    category: "tools",
+    locationId: "victory-court",
+    image: "/shop.jpg",
+    imageFocus: "88% 48%",
+  },
+  {
+    id: "prod-berchuma-stand",
+    name: "Three-Leg Wooden Stand",
+    nameAm: "ባርቹማ መቆሚያ",
+    description:
+      "Carved three-leg traditional stand — used for serving trays, mesob, and household tools.",
+    priceETB: 1400,
+    category: "tools",
+    locationId: "6gna-ber",
+    image: "/shop.jpg",
+    imageFocus: "42% 88%",
+  },
+  {
+    id: "prod-rekebot-tray",
+    name: "Rekebot Coffee Tray",
+    nameAm: "ረከቦት",
+    description:
+      "Wooden coffee ceremony tray with cup wells. Pair with jebena for a complete buna set.",
+    priceETB: 1100,
+    category: "tools",
+    locationId: "victory-court",
+    image: "/shop.jpg",
+    imageFocus: "75% 70%",
+  },
+  {
+    id: "prod-woven-tote",
+    name: "Striped Woven Tote",
+    nameAm: "ባለፈትል ቦርሳ",
+    description: "Handwoven tote with highland color bands. Day bag for the museum circuit.",
+    priceETB: 1600,
+    category: "accessories",
+    locationId: "gateway",
+    image: "/shop.jpg",
+    imageFocus: "48% 52%",
+  },
+  {
+    id: "prod-leather-satchel",
+    name: "Highland Leather Satchel",
+    nameAm: "የቆዳ ቦርሳ",
+    description: "Soft leather satchel with brass clasp. Modern cut, traditional finish.",
+    priceETB: 3200,
+    category: "accessories",
+    locationId: "gateway",
+    image: "/shop.jpg",
+    imageFocus: "62% 58%",
+    badge: "New",
+  },
+  {
+    id: "prod-coptic-cross",
+    name: "Hand Cross — Coptic Style",
+    nameAm: "የእጅ መስቀል",
+    description: "Ornate processional-style hand cross. Cast metal with highland motif.",
+    priceETB: 2800,
+    category: "accessories",
+    locationId: "emperor-hall",
+    image: "/shop.jpg",
+    imageFocus: "58% 62%",
+  },
+  {
+    id: "prod-filigree-bracelet",
+    name: "Gold-Tone Filigree Bracelet",
+    nameAm: "የወርቅ አምባር",
+    description: "Filigree bracelet inspired by historic Ethiopian court jewelry.",
+    priceETB: 1950,
+    category: "accessories",
+    locationId: "emperor-hall",
+    image: "/shop.jpg",
+    imageFocus: "52% 48%",
+  },
+  {
+    id: "prod-coffee-art",
+    name: "Coffee Ceremony Painting",
+    nameAm: "የቡና ሥነ ሥርዓት ሥዕል",
+    description:
+      "Vibrant canvas of a woman in traditional dress preparing buna. Gallery wrap.",
+    priceETB: 4500,
+    category: "art",
+    locationId: "victory-court",
+    image: "/shop.jpg",
+    imageFocus: "35% 85%",
+  },
+  {
+    id: "prod-shield-print",
+    name: "Shield Art Print",
+    nameAm: "የጋሻ ህትመት",
+    description: "Museum-quality print of a traditional highland shield motif.",
+    priceETB: 850,
+    category: "art",
+    locationId: "5gna-ber",
+    image: "/shop.jpg",
+    imageFocus: "80% 20%",
+  },
+  {
+    id: "prod-map-scroll",
+    name: "Adwa Campaign Map Scroll",
+    nameAm: "የአድዋ ካርታ",
+    description: "Decorative scroll of the 1896 campaign routes.",
+    priceETB: 1200,
+    category: "souvenir",
+    locationId: "6gna-ber",
+    image: "/shop.jpg",
+    imageFocus: "90% 30%",
   },
   {
     id: "prod-victory-medal",
     name: "Commemorative Victory Medal",
+    nameAm: "የድል ሜዳልያ",
     description: "Limited museum medal commemorating the Battle of Adwa.",
     priceETB: 950,
     category: "souvenir",
     locationId: "victory-court",
+    image: "/shop.jpg",
+    imageFocus: "95% 15%",
   },
 ];
 

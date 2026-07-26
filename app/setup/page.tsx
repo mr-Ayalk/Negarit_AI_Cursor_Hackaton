@@ -6,14 +6,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { prepareWifi, useGuide } from "@/lib/guide-context";
 import { isSpeechRecognitionSupported } from "@/lib/voice";
-import { useTheme } from "@/lib/theme";
+import { PatternBackground, ThemeToggle } from "@/ui";
 import { WifiStatusCard } from "@/components/WifiStatusCard";
 
 const STEPS = ["You", "WiFi", "Voice", "Ready"];
 
 export default function SetupPage() {
   const router = useRouter();
-  const { theme, toggleTheme } = useTheme();
   const { session, setVisitorName, setLanguage, completeSetup, hydrated } = useGuide();
   const [step, setStep] = useState(0);
   const [name, setName] = useState(session.visitorName || "");
@@ -69,22 +68,31 @@ export default function SetupPage() {
 
   return (
     <div className="split">
-      <aside className="split-media">
-        <Image src="/negarit-drum.png" alt="" fill priority sizes="50vw" style={{ objectFit: "cover" }} />
+      <aside className="split-media hero-surface">
+        <PatternBackground variant="both" interactive fade={false} />
+        <Image
+          src="/negarit-drum.png"
+          alt=""
+          fill
+          priority
+          sizes="50vw"
+          style={{ objectFit: "cover", opacity: 0.35, filter: "grayscale(1)", zIndex: 0 }}
+        />
         <div
           className="hero-scrim"
           style={{
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-end",
-            padding: "1.25rem",
+            padding: "1.5rem",
+            zIndex: 1,
           }}
         >
           <div className="brand">
-            <Image src="/negarit-drum.png" alt="" width={40} height={40} style={{ borderRadius: "50%" }} />
+            <Image src="/negarit-drum.png" alt="" width={32} height={32} style={{ borderRadius: 6 }} />
             Negarit AI
           </div>
-          <p style={{ marginTop: 10, fontFamily: "var(--font-d)", fontSize: "1.35rem", maxWidth: 280 }}>
+          <p style={{ marginTop: 12, fontSize: "1.2rem", maxWidth: 300, letterSpacing: "-0.03em", lineHeight: 1.35 }}>
             Connect to museum WiFi. Walk the halls. Hear Adwa speak.
           </p>
         </div>
@@ -95,17 +103,10 @@ export default function SetupPage() {
           <Link href="/" className="muted small">
             ← Home
           </Link>
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-          >
-            {theme === "light" ? "☾" : "☀"}
-          </button>
+          <ThemeToggle />
         </div>
-        <h1 style={{ fontSize: "1.7rem" }}>Visitor setup</h1>
-        <p className="muted small">Museum WiFi + microphone so Negarit can guide you.</p>
+        <h1 style={{ fontSize: "1.55rem", letterSpacing: "-0.04em" }}>Visitor setup</h1>
+        <p className="muted small prose">Museum WiFi + microphone so Negarit can guide you.</p>
 
         <div className="steps">
           {STEPS.map((_, i) => (

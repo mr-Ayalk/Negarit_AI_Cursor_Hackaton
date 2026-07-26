@@ -211,17 +211,20 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!shouldSuggest) return json({ suggest: false });
 
       const near = coffeePlaces.find((c) => c.nearLocationId === currentLocationId);
-      const place = near || coffeePlaces[0];
+      const featured = coffeePlaces.find((c) => c.featured);
+      const place = near || featured || coffeePlaces[0];
       const reasons: string[] = [];
       if (lowVoice) reasons.push("your voice sounds quieter — you may need rest");
       if (longVisit)
         reasons.push(`you have been exploring for about ${Math.round(visitMinutes)} minutes`);
       if (!reasons.length) reasons.push("a short pause will make the next halls richer");
 
+      const areaLabel =
+        language === "am" ? place.areaAm || place.area || "" : place.area || "";
       const message =
         language === "am"
-          ? `እረፍት ይፈልጉ ይሆናል። ${place.nameAm} አቅራቢያ ነው — ${place.specialty}። ${place.distance}።`
-          : `May I suggest a pause? ${reasons.join(", and ")}. ${place.name} is nearby (${place.distance}) — ${place.specialty}. ${place.reason}`;
+          ? `እረፍት ይፈልጉ ይሆናል። ${place.nameAm}${areaLabel ? ` · ${areaLabel}` : ""} — ${place.specialty}። ${place.distance}።`
+          : `May I suggest a pause? ${reasons.join(", and ")}. ${place.name}${areaLabel ? ` · ${areaLabel}` : ""} (${place.distance}) — ${place.specialty}. ${place.reason}`;
       return json({
         suggest: true,
         reasons,

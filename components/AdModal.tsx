@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { MuseumLocation } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useGuide } from "@/lib/guide-context";
+import { ShopPayBrands } from "@/components/BrandLogos";
 
 type Props = {
   open: boolean;
@@ -72,7 +73,7 @@ export function AdModal({ open, location, onClose }: Props) {
         email: email.trim(),
         firstName: parts[0] || "Museum",
         lastName: parts.slice(1).join(" ") || "Visitor",
-        description: ad.title,
+        description: `Zemen Gebeya · ${ad.title}`,
       });
       if (!payment.checkoutUrl) throw new Error("No checkout URL from Chapa");
       setPhase("redirect");
@@ -87,9 +88,12 @@ export function AdModal({ open, location, onClose }: Props) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet stack" onClick={(e) => e.stopPropagation()}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <p className="eyebrow">Museum shop</p>
+            <ShopPayBrands size="sm" />
+            <p className="eyebrow" style={{ marginTop: "0.65rem" }}>
+              Museum shop
+            </p>
             <h3 style={{ fontSize: "1.25rem" }}>Hall collection</h3>
           </div>
           <button className="btn btn-ghost" style={{ padding: "0.35rem 0.65rem" }} onClick={onClose}>
@@ -153,7 +157,15 @@ export function AdModal({ open, location, onClose }: Props) {
         )}
 
         {status && (
-          <p className="small" style={{ color: status.includes("fail") || status.includes("valid") ? "var(--accent)" : "var(--muted)" }}>
+          <p
+            className="small"
+            style={{
+              color:
+                status.includes("fail") || status.includes("valid")
+                  ? "var(--accent)"
+                  : "var(--muted)",
+            }}
+          >
             {status}
           </p>
         )}

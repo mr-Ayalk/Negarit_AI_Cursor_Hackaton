@@ -29,7 +29,7 @@ export function WifiStatusCard({ compact, onSsidChange }: Props) {
   if (compact) {
     return (
       <div className="pill" title={wifi.error || wifi.source || "WiFi"}>
-        <span className="dot" style={{ background: wifi.connected ? "var(--ok)" : "#c45c26" }} />
+        <span className="dot" style={{ background: wifi.connected ? "var(--ok)" : "var(--accent)" }} />
         {wifi.loading ? "Reading WiFi…" : wifi.ssid || "No WiFi SSID"}
       </div>
     );
@@ -52,12 +52,12 @@ export function WifiStatusCard({ compact, onSsidChange }: Props) {
         <span
           className="dot"
           style={{
-            background: wifi.connected ? "var(--ok)" : "#c45c26",
+            background: wifi.connected ? "var(--ok)" : "var(--accent)",
             width: 10,
             height: 10,
           }}
         />
-        <p style={{ fontFamily: "var(--font-d)", fontSize: "1.35rem", wordBreak: "break-word" }}>
+        <p style={{ fontFamily: "var(--font-mono-stack)", fontSize: "1.2rem", wordBreak: "break-word", letterSpacing: "-0.03em" }}>
           {wifi.loading ? "Detecting…" : wifi.ssid || "Not connected to WiFi"}
         </p>
       </div>
