@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { MuseumLocation } from "@/lib/api";
 import { api } from "@/lib/api";
+import { ShopPayBrands, TelebirrLogo } from "@/components/BrandLogos";
 
 type Props = {
   open: boolean;
@@ -79,8 +80,11 @@ export function AdModal({ open, location, onClose }: Props) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet stack" onClick={(e) => e.stopPropagation()}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3 style={{ fontSize: "1.15rem" }}>Museum shop</h3>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <ShopPayBrands size="sm" />
+            <h3 style={{ fontSize: "1.15rem", marginTop: "0.65rem" }}>Museum shop</h3>
+          </div>
           <button className="btn btn-ghost" style={{ padding: "0.35rem 0.65rem" }} onClick={onClose}>
             Close
           </button>
@@ -117,8 +121,15 @@ export function AdModal({ open, location, onClose }: Props) {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
-            <button className="btn btn-primary btn-block" disabled={busy} onClick={pay}>
-              {busy ? "Processing…" : "Pay with Telebirr"}
+            <button className="btn btn-primary btn-block btn-pay-tele" disabled={busy} onClick={pay}>
+              {busy ? (
+                "Processing…"
+              ) : (
+                <>
+                  <TelebirrLogo size="sm" className="btn-pay-tele__logo" />
+                  Pay with Telebirr
+                </>
+              )}
             </button>
             <button className="btn btn-ghost btn-block" onClick={() => setPhase("browse")}>
               Back

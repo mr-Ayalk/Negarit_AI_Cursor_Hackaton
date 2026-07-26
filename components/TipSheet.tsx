@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { TelebirrLogo } from "@/components/BrandLogos";
 
 const AMOUNTS = [20, 50, 100, 200];
 
@@ -45,8 +46,11 @@ export function TipSheet({ open, onClose }: Props) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="sheet stack" onClick={(e) => e.stopPropagation()}>
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h3 style={{ fontSize: "1.15rem" }}>Tip your guide</h3>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <TelebirrLogo size="sm" />
+            <h3 style={{ fontSize: "1.15rem", marginTop: "0.65rem" }}>Tip your guide</h3>
+          </div>
           <button className="btn btn-ghost" style={{ padding: "0.35rem 0.65rem" }} onClick={onClose}>
             Close
           </button>
@@ -70,8 +74,15 @@ export function TipSheet({ open, onClose }: Props) {
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
-        <button className="btn btn-primary btn-block" disabled={busy} onClick={send}>
-          {busy ? "Sending…" : `Send ${amount} ETB`}
+        <button className="btn btn-primary btn-block btn-pay-tele" disabled={busy} onClick={send}>
+          {busy ? (
+            "Sending…"
+          ) : (
+            <>
+              <TelebirrLogo size="sm" className="btn-pay-tele__logo" />
+              Send {amount} ETB
+            </>
+          )}
         </button>
         {message && (
           <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>

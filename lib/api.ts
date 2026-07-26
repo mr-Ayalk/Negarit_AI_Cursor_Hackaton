@@ -25,6 +25,19 @@ export type AdItem = {
   cta: string;
 };
 
+export type ShopProduct = {
+  id: string;
+  name: string;
+  nameAm: string;
+  description: string;
+  priceETB: number;
+  category: string;
+  locationId?: string;
+  image: string;
+  imageFocus?: string;
+  badge?: string;
+};
+
 export type CoffeePlace = {
   id: string;
   name: string;
@@ -35,6 +48,10 @@ export type CoffeePlace = {
   openUntil: string;
   nearLocationId: string;
   reason: string;
+  area?: string;
+  areaAm?: string;
+  image?: string;
+  featured?: boolean;
 };
 
 export type VisitSession = {
@@ -174,5 +191,11 @@ export const api = {
   coffee: (near?: string) =>
     request<{ places: CoffeePlace[] }>(
       near ? `/coffee?near=${encodeURIComponent(near)}` : "/coffee"
+    ),
+  products: (locationId?: string) =>
+    request<{ products: ShopProduct[] }>(
+      locationId
+        ? `/products?locationId=${encodeURIComponent(locationId)}`
+        : "/products"
     ),
 };

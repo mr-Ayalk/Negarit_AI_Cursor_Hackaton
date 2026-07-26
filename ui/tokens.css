@@ -1,0 +1,75 @@
+/* ============================================================
+   Negarit UI tokens — Vercel-inspired color & type system
+   Edit here to control font, theme, and color across the app.
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  --bg: #000000;
+  --bg-elev: #0a0a0a;
+  --panel: #111111;
+  --text: #ededed;
+  --muted: #888888;
+  --accent: #0070f3;
+  --accent-soft: #3291ff;
+  --ok: #00c853;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --topbar-bg: rgba(0, 0, 0, 0.72);
+  --dock-bg: rgba(0, 0, 0, 0.88);
+  --overlay-bg: rgba(0, 0, 0, 0.72);
+  --radar-bg: #0a0a0a;
+  --hero-fade: linear-gradient(
+    to top,
+    #000 8%,
+    rgba(0, 0, 0, 0.72) 42%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  --dock-hover: rgba(255, 255, 255, 0.06);
+  --field-placeholder: rgba(136, 136, 136, 0.7);
+  --glow: rgba(0, 112, 243, 0.45);
+  --pattern-dot: rgba(255, 255, 255, 0.14);
+  --pattern-line: rgba(255, 255, 255, 0.06);
+  --shadow-panel: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 8px 40px rgba(0, 0, 0, 0.45);
+  --btn-primary-fg: #fff;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --font-d: var(--font-mono), ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  --font-b: var(--font-sans), var(--font-mono), ui-sans-serif, sans-serif;
+  --font-mono-stack: var(--font-mono), ui-monospace, "Cascadia Code", Menlo, monospace;
+  --max: 980px;
+  --pad: clamp(1rem, 4vw, 1.5rem);
+  --r: 8px;
+  --r-lg: 12px;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #fafafa;
+  --bg-elev: #f4f4f5;
+  --panel: #ffffff;
+  --text: #0a0a0a;
+  --muted: #71717a;
+  --accent: #0070f3;
+  --accent-soft: #0060d1;
+  --ok: #00a844;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.14);
+  --topbar-bg: rgba(250, 250, 250, 0.82);
+  --dock-bg: rgba(255, 255, 255, 0.92);
+  --overlay-bg: rgba(10, 10, 10, 0.48);
+  --radar-bg: #f0f0f0;
+  --hero-fade: linear-gradient(
+    to top,
+    #fafafa 8%,
+    rgba(250, 250, 250, 0.82) 48%,
+    rgba(250, 250, 250, 0.2) 100%
+  );
+  --dock-hover: rgba(0, 0, 0, 0.04);
+  --field-placeholder: rgba(113, 113, 122, 0.65);
+  --glow: rgba(0, 112, 243, 0.28);
+  --pattern-dot: rgba(0, 0, 0, 0.12);
+  --pattern-line: rgba(0, 0, 0, 0.06);
+  --shadow-panel: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 8px 30px rgba(0, 0, 0, 0.06);
+  --btn-primary-fg: #fff;
+  color-scheme: light;
+}

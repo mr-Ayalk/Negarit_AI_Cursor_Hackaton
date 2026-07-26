@@ -83,8 +83,8 @@ export default function SummaryPage() {
               <p
                 key={i}
                 style={{
-                  fontFamily: "var(--font-d)",
-                  fontSize: "1.06rem",
+                  fontFamily: "var(--font-b)",
+                  fontSize: "1.02rem",
                   lineHeight: 1.7,
                   marginBottom: 14,
                 }}
