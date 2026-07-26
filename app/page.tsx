@@ -21,7 +21,7 @@ const FEATURES = [
   {
     code: "03 · pay",
     title: "Zemen Gebeya",
-    body: "Habesha clothing & traditional tools — checkout with Telebirr.",
+    body: "Habesha clothing & traditional tools — checkout with Chapa.",
   },
 ] as const;
 
@@ -31,7 +31,8 @@ export default function HomePage() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    setShow(true);
+    const t = requestAnimationFrame(() => setShow(true));
+    return () => cancelAnimationFrame(t);
   }, []);
 
   return (
@@ -51,16 +52,20 @@ export default function HomePage() {
         >
           <Image
             src="/negarit-drum.png"
-            alt=""
+            alt="Negarit war drum at Adwa"
             fill
             priority
             sizes="100vw"
-            style={{ objectFit: "cover", objectPosition: "center 30%", filter: "grayscale(1) contrast(1.05)" }}
+            style={{
+              objectFit: "cover",
+              objectPosition: "center 30%",
+              filter: "grayscale(1) contrast(1.05)",
+            }}
           />
         </div>
 
         <div
-          className="wrap"
+          className="wrap hero-copy"
           style={{
             position: "relative",
             zIndex: 1,
@@ -71,7 +76,8 @@ export default function HomePage() {
             paddingBottom: "clamp(2.5rem, 8vh, 4rem)",
             paddingTop: "4rem",
             opacity: show ? 1 : 0,
-            transition: "opacity 0.5s ease",
+            transform: show ? "translateY(0)" : "translateY(10px)",
+            transition: "opacity 0.55s ease, transform 0.55s ease",
           }}
         >
           <p className="pill reveal" style={{ width: "fit-content", marginBottom: "1rem" }}>

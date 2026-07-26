@@ -90,11 +90,10 @@ export default function ShopPage() {
           <h1 className="reveal reveal-delay-1 shop-hero__title visually-hidden">Zemen Gebeya</h1>
           <p className="muted prose reveal reveal-delay-2 shop-hero__sub">
             Traditional Habesha clothing, highland tools, and museum crafts — pay securely with
-            Telebirr.
+            Chapa.
           </p>
           <div className="row reveal reveal-delay-2" style={{ marginTop: "0.85rem", alignItems: "center" }}>
-            <TelebirrLogo size="sm" />
-            <span className="muted small">Accepted at checkout</span>
+            <span className="muted small">Secure checkout with Chapa</span>
           </div>
           <div className="row reveal reveal-delay-3" style={{ marginTop: "1.4rem" }}>
             <a href="#catalog" className="btn btn-primary">

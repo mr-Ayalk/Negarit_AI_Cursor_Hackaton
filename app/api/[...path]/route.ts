@@ -14,11 +14,12 @@ import {
   researchEnrichment,
 } from "@/lib/server/ai";
 import {
-  createPayment,
-  confirmPayment,
+  initializeChapaPayment,
+  verifyChapaPayment,
   getPayment,
-  simulateTelebirrCallback,
-} from "@/lib/server/telebirr";
+  getPaymentByTxRef,
+  hasChapaKey,
+} from "@/lib/server/chapa";
 
 type Ctx = { params: Promise<{ path?: string[] }> };
 
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     return json({
       addisAi: Boolean(process.env.ADDIS_AI_API_KEY),
       elevenLabs: hasElevenLabsKey(),
+      chapa: hasChapaKey(),
       wifiDetect: true,
       ragChunks: getKnowledgeChunks().length,
     });
@@ -155,6 +157,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return json({
         addisAi: Boolean(process.env.ADDIS_AI_API_KEY),
         elevenLabs: hasElevenLabsKey(),
+        chapa: hasChapaKey(),
         wifiDetect: true,
         ragChunks: getKnowledgeChunks().length,
       });
@@ -217,9 +220,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       if (!reasons.length) reasons.push("a short pause will make the next halls richer");
 
       const areaLabel =
-        language === "am"
-          ? place.areaAm || place.area || ""
-          : place.area || "";
+        language === "am" ? place.areaAm || place.area || "" : place.area || "";
       const message =
         language === "am"
           ? `እረፍት ይፈልጉ ይሆናል። ${place.nameAm}${areaLabel ? ` · ${areaLabel}` : ""} — ${place.specialty}። ${place.distance}።`
@@ -254,40 +255,53 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     }
     if (path === "ai/research") return json(await researchEnrichment(body));
 
-    if (path === "payments/telebirr") {
+    if (path === "payments/chapa" || path === "payments/telebirr") {
       if (!body.amountETB || !body.purpose) {
         return json({ error: "amountETB and purpose are required" }, 400);
       }
-      return json({ payment: createPayment(body) }, 201);
+      const payment = await initializeChapaPayment({
+        amountETB: Number(body.amountETB),
+        purpose: String(body.purpose),
+        productId: body.productId,
+        visitorId: body.visitorId,
+        phone: body.phone,
+        email: body.email,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        description: body.description,
+      });
+      return json({ payment }, 201);
+    }
+
+    if (path === "payments/chapa/verify") {
+      const txRef = body.tx_ref || body.trx_ref || body.txRef;
+      if (!txRef) return json({ error: "tx_ref is required" }, 400);
+      const payment = await verifyChapaPayment(String(txRef));
+      return json({ payment });
     }
 
     const confirmMatch = path.match(/^payments\/([^/]+)\/confirm$/);
     if (confirmMatch) {
-      const payment = confirmPayment(confirmMatch[1]);
-      if (!payment) return json({ error: "Payment not found" }, 404);
-      return json({ payment });
-    }
-
-    const callbackMatch = path.match(/^payments\/([^/]+)\/callback$/);
-    if (callbackMatch) {
-      const payment = simulateTelebirrCallback(
-        callbackMatch[1],
-        body.success !== false
-      );
-      if (!payment) return json({ error: "Payment not found" }, 404);
+      // Backward compat: verify by stored id → txRef
+      const existing = getPayment(confirmMatch[1]) || getPaymentByTxRef(confirmMatch[1]);
+      if (!existing) return json({ error: "Payment not found" }, 404);
+      const payment = await verifyChapaPayment(existing.txRef);
       return json({ payment });
     }
 
     if (path === "tips") {
-      const payment = createPayment({
+      const payment = await initializeChapaPayment({
         amountETB: body.amountETB ?? 50,
         purpose: "tip",
         visitorId: body.visitorId,
         phone: body.phone,
+        email: body.email,
+        firstName: body.firstName,
+        lastName: body.lastName,
         description: "Tip for Negarit AI guide service",
       });
       return json(
-        { payment, message: "Thank you — your tip supports Negarit AI." },
+        { payment, message: "Opening Chapa checkout for your tip." },
         201
       );
     }

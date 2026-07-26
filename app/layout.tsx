@@ -6,7 +6,7 @@ import { fontVariables } from "@/ui/fonts";
 export const metadata: Metadata = {
   title: "Negarit AI — Adwa Museum Guide",
   description:
-    "WiFi-powered AI visiting guide for Adwa Museum. Voice stories, Addis AI translation, Telebirr payments, and a day blog of your visit.",
+    "WiFi-powered visiting guide for Adwa Museum. Voice stories, Addis AI for Amharic, ElevenLabs voice, Chapa payments, and a day chronicle of your visit.",
   applicationName: "Negarit AI",
   icons: {
     icon: "/negarit-drum.png",

@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import type { AdItem, MuseumLocation } from "@/lib/api";
 import { api } from "@/lib/api";
-import { ShopPayBrands, TelebirrLogo } from "@/components/BrandLogos";
+import { useGuide } from "@/lib/guide-context";
+import { ShopPayBrands } from "@/components/BrandLogos";
 
 export type AdInterruptMode = "exhibit" | "marketplace";
 
@@ -20,22 +21,27 @@ function validEthPhone(phone: string) {
   return /^(09|07)\d{8}$/.test(phone.replace(/\s+/g, ""));
 }
 
+function validEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
 export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
+  const { session } = useGuide();
   const [selected, setSelected] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
-  const [phase, setPhase] = useState<"interrupt" | "pay" | "done">("interrupt");
+  const [email, setEmail] = useState("");
+  const [phase, setPhase] = useState<"interrupt" | "pay">("interrupt");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ok, setOk] = useState(false);
 
   useEffect(() => {
     if (open) {
       setSelected(ads[0]?.productId || null);
       setPhone("");
+      setEmail("");
       setPhase("interrupt");
       setStatus("");
       setBusy(false);
-      setOk(false);
     }
   }, [open, location?.id, mode, ads]);
 
@@ -45,32 +51,34 @@ export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
   const isMarket = mode === "marketplace";
 
   const pay = async () => {
-    if (!validEthPhone(phone)) {
-      setStatus("Enter a valid Telebirr number (09XXXXXXXX or 07XXXXXXXX).");
-      setOk(false);
+    if (!validEmail(email)) {
+      setStatus("Enter a valid email for the Chapa receipt.");
+      return;
+    }
+    if (phone && !validEthPhone(phone)) {
+      setStatus("Phone must be 09XXXXXXXX or 07XXXXXXXX.");
       return;
     }
     setBusy(true);
-    setStatus("Opening Telebirr…");
-    setOk(false);
+    setStatus("Creating Chapa checkout…");
     try {
+      const name = (session.visitorName || "Visitor").trim();
+      const parts = name.split(/\s+/);
       const { payment } = await api.createPayment({
         amountETB: ad.priceETB,
         purpose: "product",
         productId: ad.productId,
-        phone,
+        phone: phone || undefined,
+        email: email.trim(),
+        firstName: parts[0] || "Museum",
+        lastName: parts.slice(1).join(" ") || "Visitor",
         description: `Zemen Gebeya · ${ad.title}`,
       });
-      setStatus("Confirming Telebirr payment…");
-      await new Promise((r) => setTimeout(r, 700));
-      await api.confirmPayment(payment.id);
-      setPhase("done");
-      setStatus(`Paid ${ad.priceETB.toLocaleString()} ETB for ${ad.title}.`);
-      setOk(true);
+      if (!payment.checkoutUrl) throw new Error("No checkout URL from Chapa");
+      setStatus("Redirecting to Chapa…");
+      window.location.href = payment.checkoutUrl;
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "Payment failed");
-      setOk(false);
-    } finally {
       setBusy(false);
     }
   };
@@ -92,7 +100,10 @@ export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
         <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <ShopPayBrands size="sm" />
-            <h3 id="ad-interrupt-title" style={{ fontSize: "1.2rem", letterSpacing: "-0.03em", marginTop: "0.65rem" }}>
+            <h3
+              id="ad-interrupt-title"
+              style={{ fontSize: "1.2rem", letterSpacing: "-0.03em", marginTop: "0.65rem" }}
+            >
               {isMarket
                 ? "You are near the museum shop"
                 : `From ${location?.name || "this hall"}`}
@@ -135,20 +146,21 @@ export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
                 >
                   <span className="ad-interrupt__pick-title">{item.title}</span>
                   <span className="muted small">{item.subtitle}</span>
-                  <span className="ad-interrupt__pick-price">{item.priceETB.toLocaleString()} ETB</span>
+                  <span className="ad-interrupt__pick-price">
+                    {item.priceETB.toLocaleString()} ETB
+                  </span>
                 </button>
               ))}
             </div>
 
             <button
-              className="btn btn-primary btn-block btn-pay-tele"
+              className="btn btn-primary btn-block"
               onClick={() => {
                 setPhase("pay");
                 setStatus("");
               }}
             >
-              <TelebirrLogo size="sm" className="btn-pay-tele__logo" />
-              {ad.cta || "Buy with Telebirr"}
+              {ad.cta?.includes("Telebirr") ? "Buy with Chapa" : ad.cta || "Buy with Chapa"}
             </button>
             <button className="btn btn-ghost btn-block" onClick={onClose}>
               Continue tour
@@ -164,20 +176,21 @@ export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
             </div>
             <input
               className="field"
-              placeholder="Telebirr phone 09XXXXXXXX"
+              type="email"
+              placeholder="Email for Chapa receipt"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+            <input
+              className="field"
+              placeholder="Phone 09XXXXXXXX (optional)"
               inputMode="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
-            <button className="btn btn-primary btn-block btn-pay-tele" disabled={busy} onClick={pay}>
-              {busy ? (
-                "Processing…"
-              ) : (
-                <>
-                  <TelebirrLogo size="sm" className="btn-pay-tele__logo" />
-                  Pay with Telebirr
-                </>
-              )}
+            <button className="btn btn-primary btn-block" disabled={busy} onClick={pay}>
+              {busy ? "Opening Chapa…" : "Pay with Chapa"}
             </button>
             <button className="btn btn-ghost btn-block" onClick={() => setPhase("interrupt")}>
               Back
@@ -185,25 +198,7 @@ export function TourAdInterrupt({ open, mode, location, ads, onClose }: Props) {
           </div>
         )}
 
-        {phase === "done" && (
-          <div className="stack" style={{ textAlign: "center" }}>
-            <div className={`shop-checkout__seal ${ok ? "is-ok" : ""}`} style={{ margin: "0 auto" }}>
-              ✓
-            </div>
-            <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>
-              {status}
-            </p>
-            <button className="btn btn-primary btn-block" onClick={onClose}>
-              Resume tour
-            </button>
-          </div>
-        )}
-
-        {phase !== "done" && status && (
-          <p className="small" style={{ color: ok ? "var(--ok)" : "var(--accent)" }}>
-            {status}
-          </p>
-        )}
+        {status && <p className="small" style={{ color: "var(--muted)" }}>{status}</p>}
       </div>
     </div>
   );
